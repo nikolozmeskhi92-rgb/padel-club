@@ -5,7 +5,13 @@
  * ever charges in something else.
  */
 export const CURRENCY = process.env.NEXT_PUBLIC_CURRENCY || "GEL";
-export const CURRENCY_LOCALE = process.env.NEXT_PUBLIC_CURRENCY_LOCALE || "en-GE";
+/**
+ * Controls grouping and the decimal mark only — the currency symbol is ours
+ * (see below). "en-GE" renders 25.00 as "25,00", which reads as a thousands
+ * separator to an English-speaking customer; "en-US" gives "25.00" and
+ * "1,245.00". Override if the club wants Georgian conventions.
+ */
+export const CURRENCY_LOCALE = process.env.NEXT_PUBLIC_CURRENCY_LOCALE || "en-US";
 
 /**
  * Symbols are ours, not Intl's. `Intl.NumberFormat(..., { style: "currency" })`

@@ -6,7 +6,10 @@ node_modules
 *.log
 .DS_Store
 
-# Large media kept out of git — see claude/build-status.md
+# Source media stays out of git (the 97 MB 4K original lives in ../Media);
+# the web-optimised derivatives under public/media DO ship — Vercel serves them.
 *.mp4
 *.mov
 pexels-*.jpg
+!public/media/*.mp4
+!public/media/*.webm
