@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Check, AlertCircle, Droplets, Clock, RefreshCw } from "lucide-react";
+import { Loader2, Check, AlertCircle, Droplets, Clock, RefreshCw, ChevronDown, Home } from "lucide-react";
 import { isPeakHour, formatMoney } from "@/lib/pricing";
 import { cn } from "@/lib/utils/cn";
 import type { WashRecommendationResult, WashSuggestion } from "@/lib/carwash/suggest";
@@ -37,6 +37,31 @@ function buildTimeSlots() {
 }
 const TIME_SLOTS = buildTimeSlots();
 
+const CLOSE_MINUTES = CLOSE_HOUR * 60;
+
+function toMinutes(hhmm: string) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function toHHMM(mins: number) {
+  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+}
+
+/**
+ * People arrive knowing when they want to play, not which court they want.
+ * Grouping the day into three periods lets the page open on the part of the day
+ * the customer is actually shopping for — previously the 18:00-23:00 block, the
+ * busiest and most expensive hours, sat off the right edge of a wide table.
+ */
+const PERIODS = [
+  { id: "morning", label: "Morning", sub: "08:00–12:00", from: 8 * 60, to: 12 * 60 },
+  { id: "afternoon", label: "Afternoon", sub: "12:00–17:00", from: 12 * 60, to: 17 * 60 },
+  { id: "evening", label: "Evening", sub: "17:00–23:00", from: 17 * 60, to: 23 * 60 },
+] as const;
+
+type PeriodId = (typeof PERIODS)[number]["id"];
+
 type Step = "slot" | "extras" | "checkout" | "success";
 
 export function CourtBookingFlow() {
@@ -48,6 +73,7 @@ export function CourtBookingFlow() {
   const [loadingGrid, setLoadingGrid] = useState(false);
   const [gridError, setGridError] = useState(false);
   const [gridReloadKey, setGridReloadKey] = useState(0);
+  const [period, setPeriod] = useState<PeriodId>("evening");
   const [step, setStep] = useState<Step>("slot");
   const [equipment, setEquipment] = useState<Record<number, number>>({});
   const [guest, setGuest] = useState({ name: "", email: "", phone: "" });
@@ -116,6 +142,80 @@ export function CourtBookingFlow() {
     return d;
   }
 
+  /**
+   * A slot is bookable only if EVERY half-hour block it spans is free, it
+   * finishes before the club closes, and it hasn't already started.
+   *
+   * The old grid checked only the starting block, so a 90-minute booking could
+   * be selected on top of an existing one and a 22:30 start could run half an
+   * hour past closing — both rejected by the server after the customer had
+   * filled in the whole checkout form.
+   */
+  function isCourtFree(courtId: number, time: string, mins: number) {
+    const start = toMinutes(time);
+    if (start + mins > CLOSE_MINUTES) return false;
+    for (let offset = 0; offset < mins; offset += 30) {
+      if (isSlotTaken(courtId, toHHMM(start + offset))) return false;
+    }
+    return true;
+  }
+
+  function isPast(time: string) {
+    return isSameDay(date, new Date()) && slotStartDate(time).getTime() <= Date.now();
+  }
+
+  /** Mirrors the pricing_rules seed data; the server always re-prices on submit. */
+  function basePriceFor(time: string, mins: 60 | 90) {
+    const d = slotStartDate(time);
+    const weekend = d.getDay() === 0 || d.getDay() === 6;
+    if (weekend) return mins === 60 ? 4500 : 6400;
+    return isPeakHour(d) ? (mins === 60 ? 4000 : 5800) : mins === 60 ? 2500 : 3600;
+  }
+
+  /** Times that can actually be booked today, with the courts free for each. */
+  const availability = useMemo(() => {
+    const map = new Map<string, CourtRow[]>();
+    for (const t of TIME_SLOTS) {
+      if (toMinutes(t) + duration > CLOSE_MINUTES) continue;
+      if (isPast(t)) continue;
+      map.set(t, COURTS.filter((c) => isCourtFree(c.id, t, duration)));
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booked, duration, date]);
+
+  /** True when the whole period is behind us on the selected day. */
+  function periodHasPassed(from: number, to: number) {
+    if (!isSameDay(date, new Date())) return false;
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes() >= to;
+  }
+
+  const freeByPeriod = useMemo(() => {
+    const counts: Record<string, number> = { morning: 0, afternoon: 0, evening: 0 };
+    for (const [t, courts] of availability) {
+      if (courts.length === 0) continue;
+      const m = toMinutes(t);
+      const p = PERIODS.find((x) => m >= x.from && m < x.to);
+      if (p) counts[p.id] += 1;
+    }
+    return counts;
+  }, [availability]);
+
+  /**
+   * Land on a period that has something in it. Evening is the default because
+   * that is when most people play, but on a Tuesday at 21:00 — or on a fully
+   * booked evening — sending the customer to an empty list is worse than
+   * showing them tomorrow morning's options.
+   */
+  useEffect(() => {
+    if (loadingGrid || gridError) return;
+    if (freeByPeriod[period] > 0) return;
+    const fallback = PERIODS.find((p) => freeByPeriod[p.id] > 0);
+    if (fallback) setPeriod(fallback.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freeByPeriod, loadingGrid, gridError]);
+
   // Fetch the car-wash recommendation the moment the customer moves to the
   // extras step — this is when we know the exact court slot to check against.
   useEffect(() => {
@@ -154,15 +254,7 @@ export function CourtBookingFlow() {
 
   const price = useMemo(() => {
     if (!selectedTime) return 0;
-    const d = slotStartDate(selectedTime);
-    const peak = isPeakHour(d);
-    // mirrors the server pricing_rules seed data
-    const base =
-      d.getDay() === 0 || d.getDay() === 6
-        ? duration === 60 ? 4500 : 6400
-        : peak
-        ? duration === 60 ? 4000 : 5800
-        : duration === 60 ? 2500 : 3600;
+    const base = basePriceFor(selectedTime, duration);
     const equipTotal = Object.entries(equipment).reduce(
       (sum, [id, qty]) => sum + (EQUIPMENT.find((e) => e.id === Number(id))?.price_cents ?? 0) * qty,
       0
@@ -245,7 +337,7 @@ export function CourtBookingFlow() {
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
       <h1 className="font-heading text-3xl font-extrabold uppercase tracking-tight text-ink md:text-4xl">Book a court</h1>
-      <p className="mt-2 text-ink-muted">Pick a date, then tap an open slot on the grid.</p>
+      <p className="mt-2 text-ink-muted">Pick a day and a time — we&apos;ll show you which courts are free.</p>
 
       {/* Date strip */}
       <div className="mt-8 flex gap-2 overflow-x-auto pb-2">
@@ -285,8 +377,8 @@ export function CourtBookingFlow() {
         ))}
       </div>
 
-      {/* Availability could not be loaded — show nothing rather than a grid of
-          slots we cannot vouch for. */}
+      {/* Availability could not be loaded — offer nothing rather than slots we
+          cannot vouch for. */}
       {gridError && !loadingGrid && (
         <div className="mt-8 rounded-court border border-red-200 bg-red-50 p-6 text-center">
           <AlertCircle className="mx-auto h-6 w-6 text-red-500" />
@@ -294,7 +386,7 @@ export function CourtBookingFlow() {
             We couldn&apos;t load live availability
           </p>
           <p className="mt-1 text-sm text-ink-muted">
-            Rather than show you slots that might already be taken, we&apos;ve hidden the grid.
+            Rather than show you slots that might already be taken, we&apos;ve hidden them.
             Try again in a moment.
           </p>
           <button
@@ -306,77 +398,72 @@ export function CourtBookingFlow() {
         </div>
       )}
 
-      {/* Court x Time grid */}
-      <div
-        className={cn(
-          "relative mt-8 overflow-x-auto rounded-court border border-line",
-          gridError && !loadingGrid && "hidden"
-        )}
-      >
-        {loadingGrid && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-sm">
-            <Loader2 className="h-6 w-6 animate-spin text-brand" />
+      {!gridError && (
+        <div className="mt-8">
+          {/* Period tabs — the whole day in three taps instead of a 30-column scroll */}
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Time of day">
+            {PERIODS.map((p) => {
+              const count = freeByPeriod[p.id];
+              const active = period === p.id;
+              return (
+                <button
+                  key={p.id}
+                  role="tab"
+                  aria-selected={active}
+                  disabled={!loadingGrid && count === 0}
+                  onClick={() => {
+                    setPeriod(p.id);
+                    setSelectedTime(null);
+                    setSelectedCourt(null);
+                  }}
+                  className={cn(
+                    "flex flex-col items-start rounded-court border px-4 py-2.5 text-left transition-colors",
+                    active
+                      ? "border-brand bg-brand text-white"
+                      : "border-line bg-surface-base text-ink hover:border-ink-muted/40",
+                    !loadingGrid && count === 0 && "cursor-not-allowed opacity-45"
+                  )}
+                >
+                  <span className="text-sm font-semibold">{p.label}</span>
+                  <span className={cn("text-xs", active ? "text-white/75" : "text-ink-muted")}>
+                    {loadingGrid
+                      ? p.sub
+                      : count > 0
+                      ? `${count} slot${count === 1 ? "" : "s"} open`
+                      : periodHasPassed(p.from, p.to)
+                      ? "Passed"
+                      : "Fully booked"}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        )}
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className="sticky left-0 z-[1] bg-surface-base p-3 text-left text-xs font-semibold text-ink-muted/80">
-                Court
-              </th>
-              {TIME_SLOTS.map((t) => (
-                <th key={t} className="min-w-[52px] p-1 text-center text-[10px] font-medium text-ink-muted/70">
-                  {t}
-                </th>
+
+          {loadingGrid ? (
+            <div className="mt-5 space-y-2" aria-busy="true">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-16 animate-pulse rounded-court bg-surface-muted" />
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {COURTS.map((court) => (
-              <tr key={court.id} className="border-t border-line">
-                <td className="sticky left-0 z-[1] bg-surface-base p-3 text-xs font-bold uppercase tracking-tight text-ink">
-                  {court.name}
-                  {court.indoor && <span className="ml-1 text-[10px] text-ink-muted/70">(indoor)</span>}
-                </td>
-                {TIME_SLOTS.map((t) => {
-                  const taken = isSlotTaken(court.id, t);
-                  const isSelected = selectedCourt === court.id && selectedTime === t;
-                  const peak = isPeakHour(slotStartDate(t));
-                  return (
-                    <td key={t} className="p-1 text-center">
-                      <button
-                        disabled={taken}
-                        onClick={() => {
-                          setSelectedCourt(court.id);
-                          setSelectedTime(t);
-                        }}
-                        className={cn(
-                          "h-7 w-11 rounded-md text-[10px] transition-colors",
-                          taken && "cursor-not-allowed bg-line",
-                          !taken && isSelected && "bg-brand",
-                          !taken && !isSelected && peak && "bg-peak/15 hover:bg-peak/25",
-                          !taken && !isSelected && !peak && "bg-brand-accent/10 hover:bg-brand-accent/20"
-                        )}
-                        aria-label={`${court.name} at ${t}${taken ? " (unavailable)" : ""}`}
-                      />
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div
-        className={cn(
-          "mt-3 flex gap-5 text-xs text-ink-muted/80",
-          gridError && !loadingGrid && "hidden"
-        )}
-      >
-        <Legend swatch="bg-brand-accent/10" label="Off-peak" />
-        <Legend swatch="bg-peak/15" label="Peak" />
-        <Legend swatch="bg-line" label="Booked" />
-      </div>
+            </div>
+          ) : (
+            <TimeList
+              period={period}
+              availability={availability}
+              duration={duration}
+              selectedTime={selectedTime}
+              selectedCourt={selectedCourt}
+              priceFor={basePriceFor}
+              isPeak={(t) => isPeakHour(slotStartDate(t))}
+              onPickTime={(t) => {
+                setSelectedTime(selectedTime === t ? null : t);
+                setSelectedCourt(null);
+              }}
+              onPickCourt={setSelectedCourt}
+            />
+          )}
+        </div>
+      )}
+
 
       {/* Sticky summary bar */}
       <AnimatePresence>
@@ -540,14 +627,152 @@ export function CourtBookingFlow() {
   );
 }
 
-function Legend({ swatch, label }: { swatch: string; label: string }) {
+/**
+ * One row per bookable start time: the time, what it costs, and how much of the
+ * club is still free. Expanding a row reveals the courts, so choosing a
+ * specific court is still one tap away for anyone who cares — but nobody has to
+ * scan a 10x30 matrix to find out whether 19:00 is available.
+ */
+function TimeList({
+  period,
+  availability,
+  duration,
+  selectedTime,
+  selectedCourt,
+  priceFor,
+  isPeak,
+  onPickTime,
+  onPickCourt,
+}: {
+  period: PeriodId;
+  availability: Map<string, CourtRow[]>;
+  duration: 60 | 90;
+  selectedTime: string | null;
+  selectedCourt: number | null;
+  priceFor: (time: string, mins: 60 | 90) => number;
+  isPeak: (time: string) => boolean;
+  onPickTime: (time: string) => void;
+  onPickCourt: (courtId: number) => void;
+}) {
+  const bounds = PERIODS.find((p) => p.id === period)!;
+  const times = Array.from(availability.keys()).filter((t) => {
+    const m = toMinutes(t);
+    return m >= bounds.from && m < bounds.to;
+  });
+
+  if (times.length === 0) {
+    return (
+      <p className="mt-5 rounded-court border border-line bg-surface-base px-5 py-8 text-center text-sm text-ink-muted">
+        Nothing left this {bounds.label.toLowerCase()} — try another part of the day, or
+        pick tomorrow above.
+      </p>
+    );
+  }
+
   return (
-    <div className="flex items-center gap-1.5">
-      <span className={cn("h-2.5 w-2.5 rounded-sm", swatch)} />
-      {label}
-    </div>
+    <ul className="mt-5 divide-y divide-line overflow-hidden rounded-court border border-line bg-surface-base">
+      {times.map((time) => {
+        const free = availability.get(time) ?? [];
+        const soldOut = free.length === 0;
+        const open = selectedTime === time;
+        const peak = isPeak(time);
+
+        return (
+          <li key={time}>
+            <button
+              disabled={soldOut}
+              aria-expanded={open}
+              onClick={() => onPickTime(time)}
+              className={cn(
+                "flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors sm:gap-5 sm:px-5",
+                soldOut ? "cursor-not-allowed opacity-50" : "hover:bg-surface-muted",
+                open && "bg-surface-muted"
+              )}
+            >
+              <span className="w-14 shrink-0 font-heading text-lg font-bold tabular-nums text-ink">
+                {time}
+              </span>
+
+              <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
+                <span className="font-heading text-sm font-bold text-ink">
+                  {formatMoney(priceFor(time, duration))}
+                </span>
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                    peak ? "bg-peak/15 text-peak" : "bg-brand-accent/10 text-brand-accent"
+                  )}
+                >
+                  {peak ? "Peak" : "Off-peak"}
+                </span>
+              </span>
+
+              <span
+                className={cn(
+                  "shrink-0 text-xs font-medium sm:text-sm",
+                  soldOut ? "text-ink-muted" : free.length <= 2 ? "text-peak" : "text-ink-muted"
+                )}
+              >
+                {soldOut
+                  ? "Fully booked"
+                  : free.length <= 2
+                  ? `Only ${free.length} left`
+                  : `${free.length} of ${COURTS.length} free`}
+              </span>
+
+              {!soldOut && (
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 shrink-0 text-ink-muted transition-transform",
+                    open && "rotate-180"
+                  )}
+                />
+              )}
+            </button>
+
+            {open && !soldOut && (
+              <div className="border-t border-line bg-surface-muted px-4 py-4 sm:px-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  Choose a court
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {free.map((court) => {
+                    const chosen = selectedCourt === court.id;
+                    return (
+                      <button
+                        key={court.id}
+                        onClick={() => onPickCourt(court.id)}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-court border px-3.5 py-2 text-sm font-semibold transition-colors",
+                          chosen
+                            ? "border-brand bg-brand text-white"
+                            : "border-line bg-surface-base text-ink hover:border-brand/50"
+                        )}
+                      >
+                        {court.name}
+                        {court.indoor && (
+                          <span
+                            className={cn(
+                              "flex items-center gap-1 text-[10px] font-medium uppercase",
+                              chosen ? "text-white/75" : "text-ink-muted"
+                            )}
+                          >
+                            <Home className="h-3 w-3" /> Indoor
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
+
 
 function parseRange(pgRange: string): [Date, Date] {
   // Postgres tstzrange comes back like: ["2026-09-05 18:00:00+00","2026-09-05 19:00:00+00")
