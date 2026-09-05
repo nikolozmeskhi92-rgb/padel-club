@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Shirt, Timer, ShieldCheck, MapPin, Clock } from "lucide-react";
 import { formatMoney } from "@/lib/currency";
+import { CLOSE_HOUR, FREE_CANCELLATION_HOURS, OPEN_HOUR } from "@/lib/time/club";
 
 export default function HomePage() {
   return (
@@ -49,7 +50,7 @@ export default function HomePage() {
           <p className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-semibold text-white/85">
             <span className="flex items-center gap-1.5">
               <Clock className="h-4 w-4 text-brand-accent" />
-              Open 08:00–23:00 daily
+              Open {String(OPEN_HOUR).padStart(2, "0")}:00&ndash;{String(CLOSE_HOUR).padStart(2, "0")}:00 daily
             </span>
             <span className="flex items-center gap-1.5">
               <MapPin className="h-4 w-4 text-brand-accent" />
@@ -109,7 +110,7 @@ export default function HomePage() {
           <Feature
             icon={<ShieldCheck className="h-5 w-5" />}
             title="Cancel with confidence"
-            body="Free cancellation up to 24 hours before your slot. Cancel later and the full amount becomes club credit."
+            body={`Free cancellation up to ${FREE_CANCELLATION_HOURS} hours before your slot. Cancel later and the full amount becomes club credit.`}
           />
         </div>
       </section>

@@ -13,3 +13,4 @@ node_modules
 pexels-*.jpg
 !public/media/*.mp4
 !public/media/*.webm
+tsconfig.tsbuildinfo

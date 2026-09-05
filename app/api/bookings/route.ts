@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { resolvePrice } from "@/lib/pricing";
 import { sendBookingConfirmationEmail } from "@/lib/email/send";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { clubDayBounds, clubDateKey, isWithinOpeningHours } from "@/lib/time/club";
 
 const BookingSchema = z.object({
   courtId: z.number().int().min(1).max(10),
@@ -56,12 +57,17 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceRoleClient();
   const start = new Date(startTime);
 
-  // Guard: no bookings in the past, and courts only open 08:00-23:00.
+  // Guard: no bookings in the past, and the slot must fit inside opening hours.
   if (start.getTime() < Date.now()) {
     return NextResponse.json({ error: "SLOT_IN_PAST" }, { status: 400 });
   }
-  const hour = start.getUTCHours();
-  if (hour < 8 || hour >= 23) {
+  // Opening hours are the CLUB's, on the club's clock. This used to compare
+  // `start.getUTCHours()` against 8..23, which with the club at UTC+4 rejected
+  // every booking from 08:00 to 11:59 club time with OUTSIDE_OPENING_HOURS —
+  // a quarter of the trading day — while letting 00:00-02:59 through.
+  // It also only checked the START hour, so a 90-minute slot at 22:30 was
+  // accepted and ran half an hour past closing.
+  if (!isWithinOpeningHours(start, durationMinutes)) {
     return NextResponse.json({ error: "OUTSIDE_OPENING_HOURS" }, { status: 400 });
   }
 
@@ -173,15 +179,17 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createServiceRoleClient();
-  const dayStart = new Date(`${date}T00:00:00Z`).toISOString();
-  const dayEnd = new Date(`${date}T23:59:59Z`).toISOString();
+  // `date` is a club-local calendar day, so its UTC bounds are not midnight-to-
+  // midnight Z. Asking for `${date}T00:00:00Z`..`T23:59:59Z` silently shifted
+  // the window by the club's offset and clipped the ends of the day.
+  const { start: dayStart, end: dayEnd } = clubDayBounds(date);
 
   const { data, error } = await supabase
     .from("court_bookings")
     .select("id, court_id, slot, status")
     .in("status", ["pending", "confirmed"])
-    .gte("slot", dayStart)
-    .lte("slot", dayEnd);
+    .gte("slot", dayStart.toISOString())
+    .lt("slot", dayEnd.toISOString());
 
   if (error) {
     return NextResponse.json({ error: "FETCH_FAILED" }, { status: 500 });

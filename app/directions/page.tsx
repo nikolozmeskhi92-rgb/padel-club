@@ -1,3 +1,5 @@
+import { CLOSE_HOUR, FREE_CANCELLATION_HOURS } from "@/lib/time/club";
+
 export const metadata = { title: "Directions — Nexus Padel Club" };
 
 export default function DirectionsPage() {
@@ -17,8 +19,14 @@ export default function DirectionsPage() {
       <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-ink-muted">
         <li>Arrive 10 minutes before your slot.</li>
         <li>Non-marking shoes required on all courts.</li>
-        <li>Cancellations within 4 hours of the slot are non-refundable.</li>
-        <li>Car wash drop-off closes 15 minutes before the club closes.</li>
+        <li>
+          Cancel more than {FREE_CANCELLATION_HOURS} hours before your slot for a full
+          refund. Cancel later and the amount becomes club credit.
+        </li>
+        <li>
+          Car wash drop-off closes 15 minutes before the club closes at{" "}
+          {String(CLOSE_HOUR).padStart(2, "0")}:00.
+        </li>
       </ul>
     </div>
   );

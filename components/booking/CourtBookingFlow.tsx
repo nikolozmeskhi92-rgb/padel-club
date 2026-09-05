@@ -6,6 +6,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Check, AlertCircle, Droplets, Clock, RefreshCw, ChevronDown, Home } from "lucide-react";
 import { isPeakHour, formatMoney } from "@/lib/pricing";
 import { cn } from "@/lib/utils/cn";
+import {
+  CLOSE_HOUR,
+  OPEN_HOUR,
+  buildSlotLabels,
+  clubDateKey,
+  clubDayOfWeek,
+  clubHHMM,
+  clubWallTimeToInstant,
+} from "@/lib/time/club";
 import type { WashRecommendationResult, WashSuggestion } from "@/lib/carwash/suggest";
 
 type CourtRow = { id: number; name: string; indoor: boolean };
@@ -24,18 +33,10 @@ const EQUIPMENT: Equipment[] = [
   { id: 3, name: "Grip Tape", price_cents: 300 },
 ];
 
-const OPEN_HOUR = 8;
-const CLOSE_HOUR = 23;
-
-function buildTimeSlots() {
-  const slots: string[] = [];
-  for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
-    slots.push(`${String(h).padStart(2, "0")}:00`);
-    slots.push(`${String(h).padStart(2, "0")}:30`);
-  }
-  return slots;
-}
-const TIME_SLOTS = buildTimeSlots();
+// Opening hours and the slot grid come from lib/time/club, which the API and
+// the wash page read too. They used to be redeclared here, and the wash page
+// had its own 07:00-22:00 pair that disagreed with both this and the homepage.
+const TIME_SLOTS = buildSlotLabels(30);
 
 const CLOSE_MINUTES = CLOSE_HOUR * 60;
 
@@ -87,7 +88,9 @@ export function CourtBookingFlow() {
   const [step, setStep] = useState<Step>("slot");
   const [equipment, setEquipment] = useState<Record<number, number>>({});
   const [guest, setGuest] = useState({ name: "", email: "", phone: "" });
-  const [paymentMethod, setPaymentMethod] = useState<"tbc" | "bog" | "paypal">("bog");
+  // Nothing is charged online yet, so every booking is recorded as settled on
+  // site. Restore a real selector when a payment provider is wired up.
+  const paymentMethod = "cash" as const;
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingCode, setBookingCode] = useState<string | null>(null);
@@ -110,7 +113,7 @@ export function CourtBookingFlow() {
     setSelectedCourt(null);
     setSelectedTime(null);
 
-    fetch(`/api/bookings?date=${format(date, "yyyy-MM-dd")}`)
+    fetch(`/api/bookings?date=${clubDateKey(date)}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`availability ${r.status}`);
         return r.json();
@@ -132,12 +135,10 @@ export function CourtBookingFlow() {
     return () => {
       cancelled = true;
     };
-  }, [date, gridReloadKey]);
+  }, [clubDateKey(date), gridReloadKey]);
 
   function isSlotTaken(courtId: number, time: string) {
-    const [h, m] = time.split(":").map(Number);
-    const slotStart = new Date(date);
-    slotStart.setHours(h, m, 0, 0);
+    const slotStart = slotStartDate(time);
     return booked.some((b) => {
       if (b.court_id !== courtId) return false;
       const [rangeStart, rangeEnd] = parseRange(b.slot);
@@ -145,11 +146,15 @@ export function CourtBookingFlow() {
     });
   }
 
+  /**
+   * The instant a "19:00" label refers to, on the CLUB's clock.
+   * This used to be `new Date(date); d.setHours(h, m)`, i.e. the *visitor's*
+   * clock — someone booking from Berlin picked 19:00 and reserved 21:00 in
+   * Tbilisi. Everything downstream (the taken-slot check, pricing, the POST)
+   * derives from this one function.
+   */
   function slotStartDate(time: string) {
-    const [h, m] = time.split(":").map(Number);
-    const d = new Date(date);
-    d.setHours(h, m, 0, 0);
-    return d;
+    return clubWallTimeToInstant(clubDateKey(date), time);
   }
 
   /**
@@ -177,7 +182,8 @@ export function CourtBookingFlow() {
   /** Mirrors the pricing_rules seed data; the server always re-prices on submit. */
   function basePriceFor(time: string, mins: 60 | 90) {
     const d = slotStartDate(time);
-    const weekend = d.getDay() === 0 || d.getDay() === 6;
+    const dow = clubDayOfWeek(d);
+    const weekend = dow === 0 || dow === 6;
     if (weekend) return mins === 60 ? 4500 : 6400;
     return isPeakHour(d) ? (mins === 60 ? 4000 : 5800) : mins === 60 ? 2500 : 3600;
   }
@@ -197,8 +203,8 @@ export function CourtBookingFlow() {
   /** True when the whole period is behind us on the selected day. */
   function periodHasPassed(from: number, to: number) {
     if (!isSameDay(date, new Date())) return false;
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes() >= to;
+    const [nh, nm] = clubHHMM(new Date()).split(":").map(Number);
+    return nh * 60 + nm >= to;
   }
 
   const freeByPeriod = useMemo(() => {
@@ -592,22 +598,15 @@ export function CourtBookingFlow() {
                       className="w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 text-sm text-ink outline-none focus:border-brand"
                     />
 
-                    <div className="flex gap-2 pt-2">
-                      {(["bog", "tbc", "paypal"] as const).map((m) => (
-                        <button
-                          key={m}
-                          onClick={() => setPaymentMethod(m)}
-                          className={cn(
-                            "flex-1 rounded-court border py-2.5 text-xs font-semibold uppercase",
-                            paymentMethod === m
-                              ? "border-brand bg-brand-accent/10 text-brand"
-                              : "border-line text-ink-muted"
-                          )}
-                        >
-                          {m}
-                        </button>
-                      ))}
-                    </div>
+                    {/*
+                      BOG / TBC / PayPal buttons used to sit here and charged
+                      nothing — no /api/checkout route exists, so the booking
+                      was stored `unpaid` while the customer believed they had
+                      paid. Hidden until a provider is really wired up.
+                    */}
+                    <p className="mt-2 rounded-court bg-surface-muted px-4 py-3 text-xs text-ink-muted">
+                      Pay at the club when you arrive. We&apos;ll hold the court for you.
+                    </p>
                   </div>
 
                   {error && (

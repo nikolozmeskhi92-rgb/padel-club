@@ -1,3 +1,5 @@
+import { clubDayOfWeek, clubHHMM, clubHour, CLUB_TIMEZONE } from "@/lib/time/club";
+
 export type PricingRule = {
   id: number;
   scope: "court" | "car_wash";
@@ -15,6 +17,13 @@ export type PricingRule = {
  * Matches on: scope, day-of-week, duration, and whether the slot start time
  * falls inside the rule's time window. Highest `priority` wins on overlap
  * (e.g. a Saturday during "peak hours" should use the weekend rule, priority 3).
+ *
+ * Day and time are read on the CLUB's clock, not the server's. This used to use
+ * `getDay()`/`getHours()`, which on Vercel is UTC: with the club at UTC+4 a
+ * rule window of 18:00-23:00 was being matched against 18:00-23:00 UTC, i.e.
+ * 22:00-03:00 club time. Every booking from 18:00 to 21:59 — the busiest part
+ * of the evening — resolved to the off-peak rate and the club was undercharged.
+ * The same shift moved Saturday-night bookings onto Friday's rules.
  */
 export function resolvePrice(
   rules: PricingRule[],
@@ -22,8 +31,8 @@ export function resolvePrice(
   startDate: Date,
   durationMinutes: number
 ): PricingRule | null {
-  const day = startDate.getDay(); // 0=Sun..6=Sat
-  const hhmm = toHHMM(startDate);
+  const day = clubDayOfWeek(startDate); // 0=Sun..6=Sat, on the club's clock
+  const hhmm = clubHHMM(startDate);
 
   const candidates = rules.filter(
     (r) =>
@@ -41,12 +50,6 @@ export function resolvePrice(
   )[0];
 }
 
-function toHHMM(d: Date): string {
-  return `${String(d.getHours()).padStart(2, "0")}:${String(
-    d.getMinutes()
-  ).padStart(2, "0")}`;
-}
-
 function isWithinWindow(hhmm: string, start: string, end: string): boolean {
   // start/end come from Postgres as "HH:MM:SS"
   const s = start.slice(0, 5);
@@ -59,10 +62,18 @@ function isWithinWindow(hhmm: string, start: string, end: string): boolean {
 // `import { formatMoney } from "@/lib/pricing"` call sites.
 export { formatMoney, CURRENCY } from "@/lib/currency";
 
-/** Whether a given start time falls in the club's general "peak" window — used for UI badges only. */
+/**
+ * Whether a start time falls in the club's general "peak" window — used for UI
+ * badges only. Also on the club's clock: this runs in the browser, so it used
+ * to read the *visitor's* hour. A customer in London saw no peak badge on a
+ * slot the server charged as peak, which is the worst way to learn a price.
+ */
 export function isPeakHour(d: Date): boolean {
-  const day = d.getDay();
-  const hour = d.getHours();
+  const day = clubDayOfWeek(d);
+  const hour = clubHour(d);
   const isWeekend = day === 0 || day === 6;
   return isWeekend || (hour >= 18 && hour < 23);
 }
+
+/** Re-exported so callers that price things also have the zone they priced in. */
+export { CLUB_TIMEZONE };

@@ -4,8 +4,11 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { resolvePrice } from "@/lib/pricing";
 import { sendBookingConfirmationEmail } from "@/lib/email/send";
 import { enforceRateLimit } from "@/lib/rate-limit";
-
-const CHANGEOVER_MINUTES = 10; // staff turnover between cars — same value the suggestion engine assumes
+import {
+  CHANGEOVER_MINUTES,
+  clubDayBounds,
+  isWithinOpeningHours,
+} from "@/lib/time/club";
 
 const CarWashSchema = z.object({
   bayId: z.number().int().min(1).max(4),
@@ -52,6 +55,16 @@ export async function POST(req: NextRequest) {
 
   const supabase = createServiceRoleClient();
   const start = new Date(startTime);
+
+  // The court route guarded both of these and this one guarded neither, so a
+  // wash could be booked into the past or at 03:00. The bay is reserved for
+  // duration + changeover, so that whole span has to fit inside opening hours.
+  if (start.getTime() < Date.now()) {
+    return NextResponse.json({ error: "SLOT_IN_PAST" }, { status: 400 });
+  }
+  if (!isWithinOpeningHours(start, durationMinutes + CHANGEOVER_MINUTES)) {
+    return NextResponse.json({ error: "OUTSIDE_OPENING_HOURS" }, { status: 400 });
+  }
 
   const { data: rules } = await supabase
     .from("pricing_rules")
@@ -115,4 +128,39 @@ export async function POST(req: NextRequest) {
   }).catch((e) => console.error("Email send failed:", e));
 
   return NextResponse.json({ booking }, { status: 201 });
+}
+
+/**
+ * GET /api/car-wash-bookings?date=YYYY-MM-DD — the booked ranges for a club-local
+ * day, so the page can grey out taken slots.
+ *
+ * The wash page used to have no availability call at all: it drew every slot as
+ * free and only discovered a clash when the customer submitted and the database
+ * rejected it with SLOT_TAKEN. The court grid was fixed for exactly this in
+ * f4e5c26; this is the same fix for the wash bays.
+ */
+export async function GET(req: NextRequest) {
+  const limited = await enforceRateLimit(req, "avail:wash", 120, 60);
+  if (limited) return limited;
+
+  const date = req.nextUrl.searchParams.get("date");
+  if (!date) {
+    return NextResponse.json({ error: "DATE_REQUIRED" }, { status: 400 });
+  }
+
+  const supabase = createServiceRoleClient();
+  const { start: dayStart, end: dayEnd } = clubDayBounds(date);
+
+  const { data, error } = await supabase
+    .from("wash_bookings")
+    .select("id, bay_id, slot, status")
+    .in("status", ["pending", "confirmed"])
+    .gte("slot", dayStart.toISOString())
+    .lt("slot", dayEnd.toISOString());
+
+  if (error) {
+    return NextResponse.json({ error: "FETCH_FAILED" }, { status: 500 });
+  }
+
+  return NextResponse.json({ bookings: data });
 }
