@@ -5,3 +5,8 @@ node_modules
 .contentlayer
 *.log
 .DS_Store
+
+# Large media kept out of git — see claude/build-status.md
+*.mp4
+*.mov
+pexels-*.jpg
