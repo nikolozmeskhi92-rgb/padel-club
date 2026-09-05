@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { recommendWashForCourtSlot, type WashService, type BayBooking } from "@/lib/carwash/suggest";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 const QuerySchema = z.object({
   courtStart: z.string().datetime(),
@@ -16,6 +17,9 @@ const QuerySchema = z.object({
  * classification logic), plus up to 2 alternatives.
  */
 export async function GET(req: NextRequest) {
+  const limited = await enforceRateLimit(req, "suggest:wash", 60, 60);
+  if (limited) return limited;
+
   const { searchParams } = new URL(req.url);
   const parsed = QuerySchema.safeParse({
     courtStart: searchParams.get("courtStart"),

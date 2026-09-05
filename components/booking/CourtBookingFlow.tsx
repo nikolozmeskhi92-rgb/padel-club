@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Check, AlertCircle, Droplets, Clock } from "lucide-react";
+import { Loader2, Check, AlertCircle, Droplets, Clock, RefreshCw } from "lucide-react";
 import { isPeakHour, formatMoney } from "@/lib/pricing";
 import { cn } from "@/lib/utils/cn";
 import type { WashRecommendationResult, WashSuggestion } from "@/lib/carwash/suggest";
@@ -46,6 +46,8 @@ export function CourtBookingFlow() {
   const [duration, setDuration] = useState<60 | 90>(60);
   const [booked, setBooked] = useState<BookedSlot[]>([]);
   const [loadingGrid, setLoadingGrid] = useState(false);
+  const [gridError, setGridError] = useState(false);
+  const [gridReloadKey, setGridReloadKey] = useState(0);
   const [step, setStep] = useState<Step>("slot");
   const [equipment, setEquipment] = useState<Record<number, number>>({});
   const [guest, setGuest] = useState({ name: "", email: "", phone: "" });
@@ -62,16 +64,39 @@ export function CourtBookingFlow() {
 
   const next7Days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(new Date(), i)), []);
 
+  // A failed availability fetch used to fall back to an empty `booked` list,
+  // which renders every slot as free — the customer picks an already-taken
+  // court and only finds out at checkout. Failing loudly is the safer default.
   useEffect(() => {
+    let cancelled = false;
     setLoadingGrid(true);
+    setGridError(false);
     setSelectedCourt(null);
     setSelectedTime(null);
+
     fetch(`/api/bookings?date=${format(date, "yyyy-MM-dd")}`)
-      .then((r) => r.json())
-      .then((d) => setBooked(d.bookings ?? []))
-      .catch(() => setBooked([]))
-      .finally(() => setLoadingGrid(false));
-  }, [date]);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`availability ${r.status}`);
+        return r.json();
+      })
+      .then((d) => {
+        if (cancelled) return;
+        if (!Array.isArray(d?.bookings)) throw new Error("malformed availability payload");
+        setBooked(d.bookings);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBooked([]);
+        setGridError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingGrid(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [date, gridReloadKey]);
 
   function isSlotTaken(courtId: number, time: string) {
     const [h, m] = time.split(":").map(Number);
@@ -260,8 +285,34 @@ export function CourtBookingFlow() {
         ))}
       </div>
 
+      {/* Availability could not be loaded — show nothing rather than a grid of
+          slots we cannot vouch for. */}
+      {gridError && !loadingGrid && (
+        <div className="mt-8 rounded-court border border-red-200 bg-red-50 p-6 text-center">
+          <AlertCircle className="mx-auto h-6 w-6 text-red-500" />
+          <p className="mt-3 text-sm font-semibold text-ink">
+            We couldn&apos;t load live availability
+          </p>
+          <p className="mt-1 text-sm text-ink-muted">
+            Rather than show you slots that might already be taken, we&apos;ve hidden the grid.
+            Try again in a moment.
+          </p>
+          <button
+            onClick={() => setGridReloadKey((k) => k + 1)}
+            className="mt-4 inline-flex items-center gap-2 rounded-court bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-hover"
+          >
+            <RefreshCw className="h-4 w-4" /> Try again
+          </button>
+        </div>
+      )}
+
       {/* Court x Time grid */}
-      <div className="relative mt-8 overflow-x-auto rounded-court border border-line">
+      <div
+        className={cn(
+          "relative mt-8 overflow-x-auto rounded-court border border-line",
+          gridError && !loadingGrid && "hidden"
+        )}
+      >
         {loadingGrid && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-sm">
             <Loader2 className="h-6 w-6 animate-spin text-brand" />
@@ -316,7 +367,12 @@ export function CourtBookingFlow() {
           </tbody>
         </table>
       </div>
-      <div className="mt-3 flex gap-5 text-xs text-ink-muted/80">
+      <div
+        className={cn(
+          "mt-3 flex gap-5 text-xs text-ink-muted/80",
+          gridError && !loadingGrid && "hidden"
+        )}
+      >
         <Legend swatch="bg-brand-accent/10" label="Off-peak" />
         <Legend swatch="bg-peak/15" label="Peak" />
         <Legend swatch="bg-line" label="Booked" />

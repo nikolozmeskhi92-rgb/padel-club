@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { resolvePrice } from "@/lib/pricing";
 import { sendBookingConfirmationEmail } from "@/lib/email/send";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 const BookingSchema = z.object({
   courtId: z.number().int().min(1).max(10),
@@ -19,7 +20,18 @@ const BookingSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  // Creating bookings is the expensive, abusable path: each success writes a
+  // 'pending' row that holds a court against everyone else until it expires.
+  const limited = await enforceRateLimit(req, "book:court", 10, 600);
+  if (limited) return limited;
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+  }
+
   const parsed = BookingSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -140,6 +152,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  // Read-only and polled by the grid on every date change, so the ceiling is
+  // generous — it exists to stop scraping, not normal browsing.
+  const limited = await enforceRateLimit(req, "avail:court", 120, 60);
+  if (limited) return limited;
+
   // Returns booked ranges for a court/day so the client can render the grid.
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date"); // "YYYY-MM-DD"

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { resolvePrice } from "@/lib/pricing";
 import { sendBookingConfirmationEmail } from "@/lib/email/send";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 const CHANGEOVER_MINUTES = 10; // staff turnover between cars — same value the suggestion engine assumes
 
@@ -19,7 +20,17 @@ const CarWashSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const parsed = CarWashSchema.safeParse(await req.json());
+  const limited = await enforceRateLimit(req, "book:wash", 10, 600);
+  if (limited) return limited;
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 });
+  }
+
+  const parsed = CarWashSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "INVALID_INPUT", details: parsed.error.flatten() },
