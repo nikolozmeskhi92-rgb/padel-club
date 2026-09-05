@@ -3,7 +3,17 @@ import QRCode from "qrcode";
 import { format } from "date-fns";
 import BookingConfirmation from "@/emails/BookingConfirmation";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Constructed lazily, not at module scope: `new Resend(undefined)` throws, and a
+// module-scope throw takes down the whole route at import time — which broke
+// `next build` (page-data collection) on any machine without the key set.
+let resendClient: Resend | null = null;
+
+function getResend(): Resend | null {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return null;
+  if (!resendClient) resendClient = new Resend(apiKey);
+  return resendClient;
+}
 
 type SendConfirmationArgs = {
   type: "court" | "car_wash";
@@ -28,6 +38,14 @@ export async function sendBookingConfirmationEmail(args: SendConfirmationArgs) {
     priceCents,
     paymentStatus,
   } = args;
+
+  const resend = getResend();
+  if (!resend) {
+    console.warn(
+      `[email] RESEND_API_KEY not set — skipping confirmation for booking ${bookingCode}`
+    );
+    return;
+  }
 
   const endTime = new Date(date.getTime() + durationMinutes * 60_000);
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";

@@ -46,7 +46,7 @@ export default async function AdminPage() {
 
   const { data: todaysCarWash } = await supabase
     .from("wash_bookings")
-    .select("id, box_id, slot, status, service, guest_name")
+    .select("id, bay_id, slot, status, service, guest_name")
     .gte("slot", new Date().toISOString().slice(0, 10))
     .in("status", ["pending", "confirmed"]);
 

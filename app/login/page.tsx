@@ -1,11 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2 } from "lucide-react";
 
+// useSearchParams() opts a component out of static prerendering, so the form
+// lives in its own component behind a Suspense boundary. Without it, `next build`
+// fails on /login with a CSR-bailout prerender error.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginFallback />}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginFallback() {
+  return (
+    <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center px-6">
+      <div className="h-7 w-44 animate-pulse rounded-court bg-surface-muted" />
+      <div className="mt-2 h-4 w-56 animate-pulse rounded-court bg-surface-muted" />
+      <div className="mt-8 space-y-3">
+        <div className="h-11 w-full animate-pulse rounded-court bg-surface-muted" />
+        <div className="h-11 w-full animate-pulse rounded-court bg-surface-muted" />
+        <div className="h-12 w-full animate-pulse rounded-court bg-surface-muted" />
+      </div>
+    </div>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = useState("");

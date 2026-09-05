@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { createClient as createRawClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
@@ -13,14 +13,14 @@ export function createServerSupabase() {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        set(name: string, value: string, options) {
+        set(name: string, value: string, options: CookieOptions) {
           try {
             cookieStore.set({ name, value, ...options });
           } catch {
             // called from a Server Component — ignore, middleware refreshes the session
           }
         },
-        remove(name: string, options) {
+        remove(name: string, options: CookieOptions) {
           try {
             cookieStore.set({ name, value: "", ...options });
           } catch {

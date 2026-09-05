@@ -1,14 +1,30 @@
 import type { Metadata } from "next";
-import { Inter, Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 
-const interBody = Inter({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-body" });
-const jakartaHeading = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["700", "800"],
+// Fonts are self-hosted (files vendored from @fontsource) rather than fetched
+// from Google Fonts at build time — builds stay reproducible and work offline,
+// and no request leaves the visitor's browser for a third-party font CDN.
+const interBody = localFont({
+  src: [
+    { path: "./fonts/inter-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/inter-latin-500-normal.woff2", weight: "500", style: "normal" },
+  ],
+  variable: "--font-body",
+  display: "swap",
+  fallback: ["system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+});
+
+const jakartaHeading = localFont({
+  src: [
+    { path: "./fonts/plus-jakarta-sans-latin-700-normal.woff2", weight: "700", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans-latin-800-normal.woff2", weight: "800", style: "normal" },
+  ],
   variable: "--font-heading",
+  display: "swap",
+  fallback: ["system-ui", "-apple-system", "Segoe UI", "sans-serif"],
 });
 
 export const metadata: Metadata = {
