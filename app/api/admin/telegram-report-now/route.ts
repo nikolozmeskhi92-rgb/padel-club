@@ -3,7 +3,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { sendNightlyTelegramReport } from "@/lib/telegram/sendReport";
 
 export async function POST() {
-  const supabase = createServerSupabase();
+  const supabase = await createServerSupabase();
   const {
     data: { user },
   } = await supabase.auth.getUser();

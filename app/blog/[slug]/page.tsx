@@ -7,16 +7,27 @@ export function generateStaticParams() {
   return allPosts.map((p) => ({ slug: p.slug }));
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }) {
-  const post = allPosts.find((p) => p.slug === params.slug);
+/** Next 15 makes `params` a Promise — both entry points have to await it. */
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const post = allPosts.find((p) => p.slug === slug);
   return { title: post ? `${post.title} — Nexus Padel Club` : "Post not found" };
 }
 
-export default function PostPage({ params }: { params: { slug: string } }) {
-  const post = allPosts.find((p) => p.slug === params.slug);
-  if (!post) notFound();
+/**
+ * `useMDXComponent` is a hook, so it cannot be called from an async component.
+ * The page awaits `params` and hands the compiled body to this synchronous
+ * child, which is where the hook is allowed to run.
+ */
+function PostBody({ code }: { code: string }) {
+  const MDXContent = useMDXComponent(code);
+  return <MDXContent />;
+}
 
-  const MDXContent = useMDXComponent(post.body.code);
+export default async function PostPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const post = allPosts.find((p) => p.slug === slug);
+  if (!post) notFound();
 
   return (
     <article className="mx-auto max-w-2xl px-6 py-14">
@@ -26,7 +37,7 @@ export default function PostPage({ params }: { params: { slug: string } }) {
         {format(new Date(post.date), "MMMM d, yyyy")} · {post.author}
       </p>
       <div className="prose prose-invert prose-headings:font-heading prose-a:text-brand mt-8 max-w-none">
-        <MDXContent />
+        <PostBody code={post.body.code} />
       </div>
     </article>
   );

@@ -4,13 +4,14 @@ import { CheckCircle2, XCircle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default async function CheckinPage({ params }: { params: { code: string } }) {
+export default async function CheckinPage({ params }: { params: Promise<{ code: string }> }) {
+  const { code } = await params;
   const supabase = createServiceRoleClient();
 
   const { data: courtBooking } = await supabase
     .from("court_bookings")
     .select("*, courts(name)")
-    .eq("booking_code", params.code)
+    .eq("booking_code", code)
     .maybeSingle();
 
   const { data: washBooking } = courtBooking
@@ -18,7 +19,7 @@ export default async function CheckinPage({ params }: { params: { code: string }
     : await supabase
         .from("wash_bookings")
         .select("*, wash_bays(name)")
-        .eq("booking_code", params.code)
+        .eq("booking_code", code)
         .maybeSingle();
 
   const booking = courtBooking ?? washBooking;
@@ -42,7 +43,7 @@ export default async function CheckinPage({ params }: { params: { code: string }
         <>
           <XCircle className="h-12 w-12 text-red-400" />
           <h1 className="mt-4 font-heading text-2xl font-extrabold text-ink">Booking not found</h1>
-          <p className="mt-2 text-ink-muted">Code {params.code} doesn't match any booking.</p>
+          <p className="mt-2 text-ink-muted">Code {code} doesn't match any booking.</p>
         </>
       )}
     </div>

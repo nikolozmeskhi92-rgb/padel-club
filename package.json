@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "telegram:report": "tsx scripts/send-nightly-report.ts"
+    "telegram:report": "tsx scripts/send-nightly-report.ts",
+    "email:dev": "email dev --dir emails"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.1",
@@ -20,17 +21,16 @@
     "@supabase/supabase-js": "^2.45.4",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "contentlayer2": "^0.5.3",
+    "contentlayer2": "^0.5.8",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "framer-motion": "^11.11.9",
     "lucide-react": "^0.451.0",
-    "next": "^14.2.35",
-    "next-contentlayer2": "^0.5.3",
+    "next": "^15.5.25",
+    "next-contentlayer2": "^0.5.8",
     "qrcode": "^1.5.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-email": "^3.0.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "recharts": "^2.13.0",
     "resend": "^4.0.0",
     "tailwind-merge": "^2.5.3",
@@ -39,13 +39,17 @@
   "devDependencies": {
     "@types/node": "^22.7.5",
     "@types/qrcode": "^1.5.5",
-    "@types/react": "^18.3.11",
-    "@types/react-dom": "^18.3.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "autoprefixer": "^10.4.20",
     "dotenv": "^16.4.5",
-    "postcss": "^8.4.47",
+    "postcss": "^8.5.28",
+    "react-email": "^6.9.3",
     "tailwindcss": "^3.4.13",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.28"
   }
 }

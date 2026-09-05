@@ -12,7 +12,7 @@ const OverrideSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const sessionClient = createServerSupabase();
+  const sessionClient = await createServerSupabase();
   const {
     data: { user },
   } = await sessionClient.auth.getUser();

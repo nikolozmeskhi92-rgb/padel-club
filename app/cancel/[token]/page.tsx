@@ -7,6 +7,7 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function CancelPage({ params }: { params: { token: string } }) {
-  return <CancelBookingFlow token={params.token} />;
+export default async function CancelPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  return <CancelBookingFlow token={token} />;
 }

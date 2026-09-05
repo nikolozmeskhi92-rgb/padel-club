@@ -2,9 +2,14 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { createClient as createRawClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
-/** Use inside Server Components / Route Handlers — respects the signed-in user's RLS policies. */
-export function createServerSupabase() {
-  const cookieStore = cookies();
+/**
+ * Use inside Server Components / Route Handlers — respects the signed-in user's RLS policies.
+ *
+ * Async since Next 15: `cookies()` returns a Promise, so every caller must await
+ * this. See https://nextjs.org/docs/app/guides/upgrading/version-15#async-request-apis
+ */
+export async function createServerSupabase() {
+  const cookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

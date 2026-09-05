@@ -6,7 +6,7 @@ export const metadata = { title: "Admin Dashboard — Nexus Padel Club" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  const supabase = createServerSupabase();
+  const supabase = await createServerSupabase();
   const {
     data: { user },
   } = await supabase.auth.getUser();
