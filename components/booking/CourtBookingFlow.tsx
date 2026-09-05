@@ -70,7 +70,17 @@ export function CourtBookingFlow() {
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [duration, setDuration] = useState<60 | 90>(60);
   const [booked, setBooked] = useState<BookedSlot[]>([]);
-  const [loadingGrid, setLoadingGrid] = useState(false);
+  /**
+   * Starts true so the server and the first client render agree.
+   *
+   * Availability, "Passed" labels and the list of remaining slots all depend on
+   * the current time, which differs between the server render and hydration —
+   * that mismatch threw React #418/#423/#425 and made React discard and re-render
+   * the whole tree. Rendering the skeleton until the browser has fetched real
+   * availability keeps both passes identical, and there is nothing truthful to
+   * show before that fetch anyway.
+   */
+  const [loadingGrid, setLoadingGrid] = useState(true);
   const [gridError, setGridError] = useState(false);
   const [gridReloadKey, setGridReloadKey] = useState(0);
   const [period, setPeriod] = useState<PeriodId>("evening");
