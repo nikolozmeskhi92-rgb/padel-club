@@ -94,6 +94,12 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  const { data: policy } = await supabase
+    .from("cancellation_policy")
+    .select("free_cancellation_hours")
+    .eq("id", 1)
+    .maybeSingle();
+
   sendBookingConfirmationEmail({
     type: "car_wash",
     to: guestEmail,
@@ -104,6 +110,8 @@ export async function POST(req: NextRequest) {
     durationMinutes,
     priceCents: matchedRule.price_cents,
     paymentStatus: paymentMethod === "cash" ? "paid" : "unpaid",
+    cancelToken: booking.cancel_token,
+    freeCancellationHours: policy?.free_cancellation_hours ?? 24,
   }).catch((e) => console.error("Email send failed:", e));
 
   return NextResponse.json({ booking }, { status: 201 });

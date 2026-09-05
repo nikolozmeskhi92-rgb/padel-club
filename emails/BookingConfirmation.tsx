@@ -26,6 +26,8 @@ type Props = {
   clubName: string;
   clubAddress: string;
   siteUrl: string;
+  cancelUrl: string;              // one-click cancel, carries the booking's cancel_token
+  freeCancellationHours: number;  // read from cancellation_policy, so the copy can't drift
 };
 
 export default function BookingConfirmation({
@@ -40,6 +42,8 @@ export default function BookingConfirmation({
   clubName = "Nexus Padel Club",
   clubAddress = "12 Court Lane, Tbilisi",
   siteUrl = "https://example.com",
+  cancelUrl = "https://example.com/cancel/00000000-0000-0000-0000-000000000000",
+  freeCancellationHours = 24,
 }: Props) {
   return (
     <Html>
@@ -99,17 +103,24 @@ export default function BookingConfirmation({
             <Text style={{ ...sectionTitle, marginTop: 24 }}>Club rules</Text>
             <Text style={bodyText}>
               Please arrive 10 minutes before your slot. Non-marking shoes are required on
-              all courts. Cancellations within 4 hours of the slot are non-refundable.
+              all courts.
             </Text>
+
+            <Text style={{ ...sectionTitle, marginTop: 24 }}>Need to cancel?</Text>
+            <Text style={bodyText}>
+              Cancel more than {freeCancellationHours} hours before your slot for a full
+              refund. Inside {freeCancellationHours} hours we&apos;ll issue club credit for
+              the full amount instead, valid on any future booking.
+            </Text>
+            <Link href={cancelUrl} style={link}>
+              Cancel this booking →
+            </Link>
           </Section>
 
           <Hr style={hr} />
           <Text style={footer}>
-            Hi {guestName}, thanks for booking with {clubName}. Need to make changes?{" "}
-            <Link href={`${siteUrl}/bookings/${bookingCode}`} style={link}>
-              Manage your booking
-            </Link>
-            .
+            Hi {guestName}, thanks for booking with {clubName}. Show the code above or the
+            QR at reception when you arrive.
           </Text>
         </Container>
       </Body>
