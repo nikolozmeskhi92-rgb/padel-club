@@ -70,6 +70,49 @@ describe("resolvePrice", () => {
   });
 });
 
+/** The rows 0001 seeds for car_wash, after migration 0006 names the service. */
+const WASH_RULES: PricingRule[] = [
+  { id: 7, scope: "car_wash", label: "Quick Wash 30", service: "quick_wash",
+    days_of_week: [0,1,2,3,4,5,6], start_time: "08:00:00", end_time: "23:00:00",
+    duration_minutes: 30, price_cents: 800, priority: 1 },
+  { id: 8, scope: "car_wash", label: "Full Detail 60", service: "full_detail",
+    days_of_week: [0,1,2,3,4,5,6], start_time: "08:00:00", end_time: "23:00:00",
+    duration_minutes: 60, price_cents: 1500, priority: 1 },
+  { id: 9, scope: "car_wash", label: "Express Rinse 30", service: "express_rinse",
+    days_of_week: [0,1,2,3,4,5,6], start_time: "08:00:00", end_time: "23:00:00",
+    duration_minutes: 30, price_cents: 1200, priority: 1 },
+];
+
+describe("car wash pricing", () => {
+  it("charges each 30-minute service its own price", () => {
+    // The bug: both 30-min rules matched on duration and the cheapest-wins
+    // tie-break billed an Express Rinse (₾12) as a Quick Wash (₾8).
+    const quick = resolvePrice(WASH_RULES, "car_wash", monday("12:00"), 30, "quick_wash");
+    const express = resolvePrice(WASH_RULES, "car_wash", monday("12:00"), 30, "express_rinse");
+    expect(quick?.price_cents).toBe(800);
+    expect(express?.price_cents).toBe(1200);
+  });
+
+  it("prices the full club day, including the last hour", () => {
+    // Wash rules used to stop at 22:00 while the club closes at 23:00, so the
+    // slots the UI offered after 22:00 came back NO_PRICING_RULE_MATCHED.
+    for (const hhmm of ["08:00", "12:00", "22:00", "22:30"]) {
+      expect(
+        resolvePrice(WASH_RULES, "car_wash", monday(hhmm), 30, "quick_wash"),
+        `${hhmm} should price`
+      ).not.toBeNull();
+    }
+  });
+
+  it("does not price before opening", () => {
+    expect(resolvePrice(WASH_RULES, "car_wash", monday("07:00"), 30, "quick_wash")).toBeNull();
+  });
+
+  it("returns null for an unknown service rather than falling back to a cheaper one", () => {
+    expect(resolvePrice(WASH_RULES, "car_wash", monday("12:00"), 30, "wax_and_polish")).toBeNull();
+  });
+});
+
 describe("isPeakHour badge", () => {
   it("agrees with what the server charges", () => {
     for (const hhmm of ["18:00", "20:00", "22:30"]) {

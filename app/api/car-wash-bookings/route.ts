@@ -71,7 +71,11 @@ export async function POST(req: NextRequest) {
     .select("*")
     .eq("scope", "car_wash");
 
-  const matchedRule = rules ? resolvePrice(rules, "car_wash", start, durationMinutes) : null;
+  // Priced by service, not just duration: Quick Wash and Express Rinse are both
+  // 30 minutes, and matching on duration alone charged the cheaper of the two.
+  const matchedRule = rules
+    ? resolvePrice(rules, "car_wash", start, durationMinutes, service)
+    : null;
   if (!matchedRule) {
     return NextResponse.json({ error: "NO_PRICING_RULE_MATCHED" }, { status: 400 });
   }

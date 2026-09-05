@@ -45,6 +45,16 @@ truncate payments, booking_equipment, wash_bookings, court_bookings restart iden
 select assert_eq((select count(*)::int from courts), 10, '10 courts seeded');
 select assert_eq((select count(*)::int from wash_bays), 4, '4 wash bays seeded');
 select assert_eq((select count(*)::int from pricing_rules where scope='court'), 6, '6 court pricing rules');
+select assert_eq((select count(*)::int from pricing_rules where scope='car_wash' and service is null), 0,
+  'every car wash rule names its service');
+select assert_eq((select price_cents from pricing_rules where scope='car_wash' and service='express_rinse'), 1200,
+  'express rinse is priced as itself, not as the cheaper 30-min wash');
+select assert_eq((select price_cents from pricing_rules where scope='car_wash' and service='quick_wash'), 800,
+  'quick wash keeps its own price');
+select assert_eq((select count(distinct end_time)::int from pricing_rules where scope='car_wash'), 1,
+  'wash rules share one trading window');
+select assert_eq((select end_time from pricing_rules where scope='car_wash' limit 1), '23:00'::time,
+  'wash pricing runs to the club closing time');
 select assert_eq((select count(*)::int from equipment_items), 4, '4 equipment items');
 
 \warn ''
