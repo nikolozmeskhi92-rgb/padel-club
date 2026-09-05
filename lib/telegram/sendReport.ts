@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { formatMoneyPlain } from "@/lib/currency";
 
 type DailySummary = {
   court_revenue_cents: number;
@@ -13,11 +14,10 @@ type DailySummary = {
   tbc_cents: number;
   bog_cents: number;
   paypal_cents: number;
+  retained_cents: number;
 };
 
-function money(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
-}
+const money = formatMoneyPlain;
 
 function bar(pct: number, width = 10) {
   const filled = Math.round((Math.min(pct, 100) / 100) * width);
@@ -41,7 +41,11 @@ Extras:   ${money(s.extras_revenue_cents)}
 Courts  ${bar(s.court_utilization_pct)} ${s.court_utilization_pct}% (${s.court_hours_booked}h / 150h)
 Car Wash ${bar(s.wash_utilization_pct)} ${s.wash_utilization_pct}% (${s.wash_cycles} cycles)
 
-<b>💳 Payment methods</b>
+${
+  s.retained_cents > 0
+    ? `<i>Includes ${money(s.retained_cents)} kept from late cancellations — those courts went unused.</i>\n\n`
+    : ""
+}<b>💳 Payment methods</b>
 TBC:     ${money(s.tbc_cents)}
 BOG:     ${money(s.bog_cents)}
 PayPal:  ${money(s.paypal_cents)}

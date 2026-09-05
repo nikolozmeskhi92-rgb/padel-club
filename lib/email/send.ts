@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import QRCode from "qrcode";
 import { format } from "date-fns";
 import BookingConfirmation from "@/emails/BookingConfirmation";
+import { formatMoney } from "@/lib/currency";
 
 // Constructed lazily, not at module scope: `new Resend(undefined)` throws, and a
 // module-scope throw takes down the whole route at import time — which broke
@@ -25,6 +26,8 @@ type SendConfirmationArgs = {
   durationMinutes: number;
   priceCents: number;
   paymentStatus: "paid" | "unpaid";
+  cancelToken: string;                    // from the booking row; drives the cancel link
+  freeCancellationHours?: number;         // from cancellation_policy
 };
 
 export async function sendBookingConfirmationEmail(args: SendConfirmationArgs) {
@@ -37,6 +40,8 @@ export async function sendBookingConfirmationEmail(args: SendConfirmationArgs) {
     durationMinutes,
     priceCents,
     paymentStatus,
+    cancelToken,
+    freeCancellationHours = 24,
   } = args;
 
   const resend = getResend();
@@ -58,10 +63,7 @@ export async function sendBookingConfirmationEmail(args: SendConfirmationArgs) {
     color: { dark: "#001A33", light: "#FFFFFF" },
   });
 
-  const priceLabel = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(priceCents / 100);
+  const priceLabel = formatMoney(priceCents);
 
   const { error } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL || "Padel Club <bookings@example.com>",
@@ -79,6 +81,8 @@ export async function sendBookingConfirmationEmail(args: SendConfirmationArgs) {
       clubName,
       clubAddress,
       siteUrl,
+      cancelUrl: `${siteUrl}/cancel/${cancelToken}`,
+      freeCancellationHours,
     }),
   });
 

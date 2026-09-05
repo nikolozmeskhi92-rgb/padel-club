@@ -54,13 +54,10 @@ function isWithinWindow(hhmm: string, start: string, end: string): boolean {
   return hhmm >= s && hhmm < e;
 }
 
-export function formatMoney(cents: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(cents / 100);
-}
+// Money formatting lives in lib/currency.ts so the UI, the email and the
+// Telegram report all read from one place. Re-exported here for the existing
+// `import { formatMoney } from "@/lib/pricing"` call sites.
+export { formatMoney, CURRENCY } from "@/lib/currency";
 
 /** Whether a given start time falls in the club's general "peak" window — used for UI badges only. */
 export function isPeakHour(d: Date): boolean {
