@@ -7,23 +7,32 @@
 export const CURRENCY = process.env.NEXT_PUBLIC_CURRENCY || "GEL";
 export const CURRENCY_LOCALE = process.env.NEXT_PUBLIC_CURRENCY_LOCALE || "en-GE";
 
-/** "₾45.00" — for the browser, emails and anywhere Intl is available. */
-export function formatMoney(cents: number, currency: string = CURRENCY): string {
-  return new Intl.NumberFormat(CURRENCY_LOCALE, {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(cents / 100);
-}
-
 /**
- * Telegram renders a narrow, monospaced-ish column, and Intl's output for GEL
- * varies by ICU build (sometimes "₾45.00", sometimes "GEL 45.00"), which makes
- * the report's alignment jump around. This keeps the symbol fixed.
+ * Symbols are ours, not Intl's. `Intl.NumberFormat(..., { style: "currency" })`
+ * renders GEL as the literal string "GEL 45.00" on many ICU builds — including
+ * Chrome's — rather than "₾45.00", and which you get varies by browser and OS.
+ * Grouping and decimals still come from Intl; only the symbol is pinned.
  */
 const SYMBOLS: Record<string, string> = { GEL: "₾", USD: "$", EUR: "€", GBP: "£" };
 
+function symbolFor(currency: string): string {
+  return SYMBOLS[currency] ?? `${currency} `;
+}
+
+/** "₾1,245.00" — the browser, emails, anywhere a thousands separator helps. */
+export function formatMoney(cents: number, currency: string = CURRENCY): string {
+  const amount = new Intl.NumberFormat(CURRENCY_LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+  return `${symbolFor(currency)}${amount}`;
+}
+
+/**
+ * "₾1245.00" — no grouping separators. The Telegram report aligns its columns
+ * by hand, so a separator that appears only above ₾1,000 would make the rows
+ * jump.
+ */
 export function formatMoneyPlain(cents: number, currency: string = CURRENCY): string {
-  const symbol = SYMBOLS[currency] ?? `${currency} `;
-  return `${symbol}${(cents / 100).toFixed(2)}`;
+  return `${symbolFor(currency)}${(cents / 100).toFixed(2)}`;
 }
