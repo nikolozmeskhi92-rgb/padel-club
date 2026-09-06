@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createServiceRoleClient } from "@/lib/supabase/server";
+import { createServerSupabase, createServiceRoleClient } from "@/lib/supabase/server";
 import { resolvePrice } from "@/lib/pricing";
 import { sendBookingConfirmationEmail } from "@/lib/email/send";
 import { enforceRateLimit } from "@/lib/rate-limit";
@@ -17,7 +17,6 @@ const BookingSchema = z.object({
   equipment: z
     .array(z.object({ equipmentId: z.number(), quantity: z.number().min(1) }))
     .default([]),
-  userId: z.string().uuid().nullable().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -51,8 +50,17 @@ export async function POST(req: NextRequest) {
     guestPhone,
     paymentMethod,
     equipment,
-    userId,
   } = parsed.data;
+
+  // Whose account this booking belongs to comes from the SESSION, never from
+  // the request body. The schema used to accept a `userId` and hand it straight
+  // to the RPC, so anyone could have filed a booking under someone else's
+  // account just by sending their UUID. Nothing was sending it yet, but the
+  // hole was open.
+  const sessionClient = await createServerSupabase();
+  const {
+    data: { user },
+  } = await sessionClient.auth.getUser();
 
   const supabase = createServiceRoleClient();
   const start = new Date(startTime);
@@ -113,7 +121,7 @@ export async function POST(req: NextRequest) {
     p_court_id: courtId,
     p_start: start.toISOString(),
     p_duration_minutes: durationMinutes,
-    p_user_id: userId ?? null,
+    p_user_id: user?.id ?? null,
     p_guest_name: guestName,
     p_guest_email: guestEmail,
     p_guest_phone: guestPhone,

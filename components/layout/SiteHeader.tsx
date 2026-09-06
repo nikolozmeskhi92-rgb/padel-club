@@ -1,7 +1,6 @@
-import { wordmarkParts } from "@/lib/club";
-
-const wordmark = wordmarkParts();
 import Link from "next/link";
+import { wordmarkParts } from "@/lib/club";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 const NAV = [
   { href: "/book", label: "Courts" },
@@ -9,7 +8,39 @@ const NAV = [
   { href: "/blog", label: "News" },
 ];
 
-export function SiteHeader() {
+/**
+ * The header reads the session, so it can say who is signed in.
+ *
+ * It used to render a "Sign in" link unconditionally — after signing in you
+ * were still invited to sign in, with nothing anywhere to say it had worked or
+ * to get back out again. Reading the session here makes the header the honest
+ * answer to "am I logged in?", which is the question a header is for.
+ *
+ * The cost is that every page carrying this header renders dynamically rather
+ * than statically. For a club site whose interesting pages already hit the
+ * database on every request, that is the right trade.
+ */
+export async function SiteHeader() {
+  const wordmark = wordmarkParts();
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let displayName: string | null = null;
+  let isStaff = false;
+
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name, role")
+      .eq("id", user.id)
+      .maybeSingle();
+    displayName = profile?.full_name ?? user.email ?? "Account";
+    isStaff = !!profile && ["staff", "admin"].includes(profile.role);
+  }
+
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
@@ -30,12 +61,41 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Link
-            href="/login"
-            className="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:block"
-          >
-            Sign in
-          </Link>
+          {user ? (
+            <>
+              {isStaff && (
+                <Link
+                  href="/admin"
+                  className="hidden text-sm font-semibold text-brand transition-colors hover:text-brand-hover sm:block"
+                >
+                  Dashboard
+                </Link>
+              )}
+              <Link
+                href="/account"
+                className="hidden max-w-[12rem] truncate text-sm text-ink-muted transition-colors hover:text-ink sm:block"
+                title="My bookings"
+              >
+                {displayName}
+              </Link>
+              {/* A form, because signing out is a POST — see app/auth/signout. */}
+              <form action="/auth/signout" method="post">
+                <button
+                  type="submit"
+                  className="text-sm text-ink-muted transition-colors hover:text-ink"
+                >
+                  Sign out
+                </button>
+              </form>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:block"
+            >
+              Sign in
+            </Link>
+          )}
           <Link
             href="/book"
             className="rounded-court bg-brand px-4 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.03] active:scale-[0.98]"
