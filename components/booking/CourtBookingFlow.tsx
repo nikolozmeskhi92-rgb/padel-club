@@ -16,6 +16,7 @@ import {
   clubWallTimeToInstant,
 } from "@/lib/time/club";
 import type { WashRecommendationResult, WashSuggestion } from "@/lib/carwash/suggest";
+import { CourtMap, type CourtMapBooking } from "@/components/courts/CourtMap";
 
 type CourtRow = { id: number; name: string; indoor: boolean };
 type BookedSlot = { court_id: number; slot: string; status: string };
@@ -185,9 +186,35 @@ export function CourtBookingFlow() {
     const d = slotStartDate(time);
     const dow = clubDayOfWeek(d);
     const weekend = dow === 0 || dow === 6;
-    if (weekend) return mins === 60 ? 4500 : 6400;
-    return isPeakHour(d) ? (mins === 60 ? 4000 : 5800) : mins === 60 ? 2500 : 3600;
+    if (weekend) return mins === 60 ? 8000 : 12000;
+    return isPeakHour(d) ? (mins === 60 ? 8000 : 12000) : mins === 60 ? 2500 : 3600;
   }
+
+  /**
+   * `booked` arrives as Postgres range literals; the map wants two instants.
+   * Cancelled rows are filtered by the map itself so one rule covers both views.
+   */
+  const mapBookings: CourtMapBooking[] = useMemo(
+    () =>
+      booked.map((b) => {
+        const [start, end] = parseRange(b.slot);
+        return {
+          courtId: b.court_id,
+          startIso: start.toISOString(),
+          endIso: end.toISOString(),
+          status: b.status,
+        };
+      }),
+    [booked]
+  );
+
+  /** Half-hours already gone — only meaningful when the chosen day is today. */
+  const pastBeforeMinutes = useMemo(() => {
+    if (!isSameDay(date, new Date())) return null;
+    const now = clubHHMM(new Date());
+    return toMinutes(now);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubDateKey(date), booked]);
 
   /** Times that can actually be booked today, with the courts free for each. */
   const availability = useMemo(() => {
@@ -498,6 +525,40 @@ export function CourtBookingFlow() {
                 setSelectedCourt(null);
               }}
               onPickCourt={setSelectedCourt}
+            />
+          )}
+
+          {/* The same grid the desk looks at. The list above answers "what can I
+              book at seven"; this answers "when is anything free at all", which
+              is the question people actually arrive with. Clicking a free block
+              picks it, so seeing the gap and taking it is one gesture. */}
+          {!loadingGrid && (
+            <CourtMap
+              className="mt-8"
+              title="Live court map"
+              courts={COURTS}
+              bookings={mapBookings}
+              dateLabel={format(date, "EEE d MMM")}
+              variant="public"
+              pastBeforeMinutes={pastBeforeMinutes}
+              selected={
+                selectedCourt && selectedTime
+                  ? {
+                      courtId: selectedCourt,
+                      minutes: toMinutes(selectedTime),
+                      spanMinutes: duration,
+                    }
+                  : null
+              }
+              onSelect={(courtId, time) => {
+                // Only offer what the flow itself would accept: a full free run
+                // of `duration`, inside opening hours, not already gone.
+                if (!isCourtFree(courtId, time, duration) || isPast(time)) return;
+                const p = PERIODS.find((x) => toMinutes(time) >= x.from && toMinutes(time) < x.to);
+                if (p) setPeriod(p.id);
+                setSelectedTime(time);
+                setSelectedCourt(courtId);
+              }}
             />
           )}
         </div>

@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { CourtMap, type CourtMapBooking } from "@/components/courts/CourtMap";
+
 import { useState } from "react";
 import {
   ResponsiveContainer,
@@ -50,11 +53,17 @@ export function AdminDashboard({
   dailySummaries,
   courtBookingsToday,
   carWashBookingsToday,
+  courts,
+  gridBookings,
+  dateLabel,
 }: {
   adminName: string;
   dailySummaries: DailySummary[];
   courtBookingsToday: CourtBooking[];
   carWashBookingsToday: CarWashBooking[];
+  courts: { id: number; name: string; indoor: boolean }[];
+  gridBookings: CourtMapBooking[];
+  dateLabel: string;
 }) {
   const [sendingReport, setSendingReport] = useState(false);
   const [reportMsg, setReportMsg] = useState<string | null>(null);
@@ -113,6 +122,12 @@ export function AdminDashboard({
         <div>
           <p className="text-sm text-ink-muted/80">Welcome back, {adminName}</p>
           <h1 className="font-heading text-3xl font-extrabold uppercase tracking-tight text-ink">Admin Dashboard</h1>
+          <Link
+            href="/admin/bookings"
+            className="mt-3 inline-block rounded-court bg-brand px-4 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
+          >
+            Manage bookings
+          </Link>
         </div>
         <div className="flex gap-3">
           <button
@@ -186,6 +201,10 @@ export function AdminDashboard({
             <Bar dataKey="Car wash" fill="#00BFA5" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      <div className="mb-6">
+        <CourtMap title="Court map" courts={courts} bookings={gridBookings} dateLabel={dateLabel} />
       </div>
 
       {/* Today's grid + car wash queue */}

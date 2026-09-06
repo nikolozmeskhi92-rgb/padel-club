@@ -53,7 +53,7 @@ export default async function AdminPage() {
 
   const { data: todaysCourtBookings } = await supabase
     .from("court_bookings")
-    .select("id, court_id, slot, status, guest_name, payment_status")
+    .select("id, court_id, slot, status, guest_name, payment_status, booking_code")
     .overlaps("slot", dayRange)
     .in("status", ["pending", "confirmed"]);
 
@@ -63,8 +63,42 @@ export default async function AdminPage() {
     .overlaps("slot", dayRange)
     .in("status", ["pending", "confirmed"]);
 
+  // Everything the court map needs: the courts themselves, and each active
+  // booking's full range (not just its start) so a 90-minute slot paints three
+  // half-hour blocks rather than one.
+  const { data: courtList } = await supabase
+    .from("courts")
+    .select("id, name, indoor")
+    .eq("is_active", true)
+    .order("sort_order");
+
+  function parseRange(pgRange: string): { start: string; end: string } | null {
+    const m = pgRange.match(/[\[\(]"?([^",]+)"?,"?([^",\)\]]+)"?[\)\]]/);
+    return m ? { start: new Date(m[1]).toISOString(), end: new Date(m[2]).toISOString() } : null;
+  }
+
+  const gridBookings = ((todaysCourtBookings ?? []) as any[])
+    .map((b) => {
+      const r = parseRange(b.slot);
+      return r
+        ? {
+            courtId: b.court_id,
+            startIso: r.start,
+            endIso: r.end,
+            guest: b.guest_name,
+            code: b.booking_code,
+            status: b.status,
+            paymentStatus: b.payment_status,
+          }
+        : null;
+    })
+    .filter(Boolean) as any[];
+
   return (
     <AdminDashboard
+      courts={(courtList ?? []) as any}
+      gridBookings={gridBookings}
+      dateLabel={today}
       adminName={profile.full_name ?? "Admin"}
       dailySummaries={summaries}
       courtBookingsToday={todaysCourtBookings ?? []}
