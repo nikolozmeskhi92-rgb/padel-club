@@ -484,7 +484,8 @@ export function CourtBookingFlow({
             whether the club is closed, full, or not taking bookings.
           */}
           <p className="mt-2 text-xs text-ink-muted">
-            Online booking runs {horizonDays} days ahead. For a court further out,{" "}
+            Online booking runs to {format(lastBookableDay, "EEEE d MMM")}. For a court
+            further out,{" "}
             {CLUB_PHONE ? (
               <a href={`tel:${CLUB_PHONE.replace(/\s/g, "")}`} className="font-semibold text-brand">
                 call us on {CLUB_PHONE}

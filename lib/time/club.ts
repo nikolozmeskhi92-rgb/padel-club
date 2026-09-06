@@ -108,18 +108,31 @@ export const FREE_CANCELLATION_HOURS = 24;
  * How far ahead the public may book, in days.
  *
  * A club that lets anyone reserve six months of Saturday evenings finds them
- * held by people who never turn up. Seven days is the window the desk can
- * actually manage; anything further is arranged by talking to someone, which
- * is also when a deposit or a standing slot gets agreed. Staff are not bound
- * by it — see CLUB_STAFF_HORIZON_DAYS.
+ * held by people who never turn up. Eight days is the window the desk can
+ * actually manage, and eight rather than seven so the strip always reaches the
+ * same weekday next week — someone looking on Monday for "next Monday" finds
+ * it. Anything further is arranged by talking to someone, which is also when a
+ * deposit or a standing slot gets agreed. Staff are not bound by it — see
+ * STAFF_HORIZON_DAYS.
+ *
+ * Counted in calendar days INCLUDING today, so 8 means today plus the next
+ * seven, and the last bookable moment is that eighth day's closing time.
  */
-export const PUBLIC_HORIZON_DAYS = 7;
+export const PUBLIC_HORIZON_DAYS = 8;
 
 /** How far ahead the desk may book on a caller's behalf. */
 export const STAFF_HORIZON_DAYS = 30;
 
-/** Whether an instant is inside the booking window for this kind of caller. */
+/**
+ * Whether an instant is inside the booking window for this kind of caller.
+ *
+ * Counted in whole club days, not in hours from now: "eight days" has to mean
+ * the same thing at 09:00 and at 23:00, or the last day on the date strip would
+ * quietly stop being bookable as the evening wore on. The window ends at the
+ * close of the (horizonDays - 1)th day after today.
+ */
 export function isWithinBookingHorizon(instant: Date, horizonDays: number): boolean {
-  const limit = Date.now() + horizonDays * 24 * 60 * 60 * 1000;
-  return instant.getTime() <= limit;
+  const today = new Date();
+  today.setDate(today.getDate() + horizonDays - 1);
+  return instant.getTime() < clubDayBounds(clubDateKey(today)).end.getTime();
 }
