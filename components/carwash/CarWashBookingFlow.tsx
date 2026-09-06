@@ -5,6 +5,7 @@ import { addDays, format } from "date-fns";
 import { Loader2, Check, Droplets, Sparkles, Zap, AlertCircle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { formatMoney } from "@/lib/pricing";
+import { useGuestIdentity } from "@/lib/hooks/useGuestIdentity";
 import {
   CHANGEOVER_MINUTES,
   buildSlotLabels,
@@ -41,7 +42,10 @@ export function CarWashBookingFlow() {
   const [bay, setBay] = useState<number | null>(null);
   const [date, setDate] = useState(new Date());
   const [time, setTime] = useState<string | null>(null);
-  const [guest, setGuest] = useState({ name: "", email: "" });
+  // Same identity as the court flow: the account's email, and whatever name
+  // and phone this person last gave us. The wash form asks for no phone, so it
+  // carries the stored one through untouched rather than blanking it.
+  const { guest, setGuest, remember, signedIn } = useGuestIdentity();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState<string | null>(null);
@@ -157,6 +161,8 @@ export function CarWashBookingFlow() {
         return;
       }
       setCode(data.booking.booking_code);
+      // Keep the details for next time now that the booking is real.
+      remember(guest);
     } catch {
       setError("Network error — please try again.");
     } finally {
@@ -339,9 +345,18 @@ export function CarWashBookingFlow() {
               placeholder="Email"
               type="email"
               value={guest.email}
+              readOnly={signedIn}
               onChange={(e) => setGuest({ ...guest, email: e.target.value })}
-              className="w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 text-sm outline-none focus:border-brand"
+              className={cn(
+                "w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 text-sm outline-none focus:border-brand",
+                signedIn && "cursor-not-allowed text-ink-muted"
+              )}
             />
+            {signedIn && (
+              <p className="-mt-1 text-[11px] text-ink-muted">
+                Booking as {guest.email} — the confirmation goes to your account.
+              </p>
+            )}
           </div>
 
           {/*

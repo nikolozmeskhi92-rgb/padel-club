@@ -22,6 +22,14 @@
  *   - "no_wash_today"  every bay is fully booked for the rest of the day.
  */
 
+import {
+  CLOSE_HOUR,
+  OPEN_HOUR,
+  clubDateKey,
+  clubHHMM,
+  clubWallTimeToInstant,
+} from "@/lib/time/club";
+
 export type WashServiceId = "quick_wash" | "full_detail" | "express_rinse";
 
 export type WashService = {
@@ -59,12 +67,21 @@ export type WashRecommendationResult = {
   best: WashSuggestion | null;
   /** Up to 2 further alternatives (different bay/service/time), for a "or try" list. */
   alternatives: WashSuggestion[];
+  /**
+   * The best available slot for EVERY service the club sells, one each.
+   *
+   * `best` alone answered "what should we push?", so a customer who wanted a
+   * full detail was shown a quick wash and had to leave the booking to find
+   * the rest. The club sells three washes; the customer should see three.
+   */
+  perService: WashSuggestion[];
 };
 
 const BAY_COUNT = 4;
 const CHANGEOVER_MINUTES = 10; // staff turnover between cars, baked into every candidate block
-const OPEN_HOUR = 7;
-const CLOSE_HOUR = 22;
+// Opening hours come from lib/time/club — this file used to declare its own
+// 07:00-22:00 pair, which disagreed with the club's real 08:00-23:00 and so
+// offered washes an hour before the gates opened and hid the last hour of the day.
 const SEARCH_STEP_MINUTES = 10;
 /** How far outside the court window a wash is still allowed to spill and count as "close" rather than a non-match. */
 const CLOSE_OVERLAP_TOLERANCE_MINUTES = 20;
@@ -77,14 +94,17 @@ function minutesBetween(a: Date, b: Date): number {
   return (b.getTime() - a.getTime()) / 60_000;
 }
 
+/**
+ * An hour on the CLUB's clock, not the server's. `setHours` here meant the
+ * search window followed whatever machine happened to be running the app —
+ * correct on a laptop in Tbilisi, an hour or four out on a cloud host.
+ */
 function atHour(date: Date, hour: number): Date {
-  const d = new Date(date);
-  d.setHours(hour, 0, 0, 0);
-  return d;
+  return clubWallTimeToInstant(clubDateKey(date), `${String(hour).padStart(2, "0")}:00`);
 }
 
 function fmt(d: Date): string {
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return clubHHMM(d);
 }
 
 /**
@@ -136,7 +156,7 @@ export function recommendWashForCourtSlot(params: {
   const freeCandidates = generateFreeCandidates(courtStart, services, existingBayBookings);
 
   if (freeCandidates.length === 0) {
-    return { tier: "no_wash_today", best: null, alternatives: [] };
+    return { tier: "no_wash_today", best: null, alternatives: [], perService: [] };
   }
 
   const scored = freeCandidates.map((c) => {
@@ -201,9 +221,18 @@ export function recommendWashForCourtSlot(params: {
     .slice(0, 2)
     .map(toSuggestion);
 
+  // One entry per service, each the best slot that service can actually get.
+  // Kept in the club's own service order (as priced) rather than ranked, so the
+  // menu doesn't reshuffle itself every time a bay frees up.
+  const perService = services
+    .map((svc) => scored.find((c) => c.service.id === svc.id))
+    .filter((c): c is (typeof scored)[number] => Boolean(c))
+    .map(toSuggestion);
+
   return {
     tier: bestTier,
     best: toSuggestion(best),
     alternatives,
+    perService,
   };
 }

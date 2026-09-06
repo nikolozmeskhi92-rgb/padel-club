@@ -17,6 +17,7 @@ import {
 } from "@/lib/time/club";
 import type { WashRecommendationResult, WashSuggestion } from "@/lib/carwash/suggest";
 import { CourtMap, type CourtMapBooking } from "@/components/courts/CourtMap";
+import { useGuestIdentity } from "@/lib/hooks/useGuestIdentity";
 
 type CourtRow = { id: number; name: string; indoor: boolean };
 type BookedSlot = { court_id: number; slot: string; status: string };
@@ -88,7 +89,9 @@ export function CourtBookingFlow() {
   const [period, setPeriod] = useState<PeriodId>("evening");
   const [step, setStep] = useState<Step>("slot");
   const [equipment, setEquipment] = useState<Record<number, number>>({});
-  const [guest, setGuest] = useState({ name: "", email: "", phone: "" });
+  // Checkout fills itself: the account's email, and whatever name and phone
+  // this person last gave us. See lib/hooks/useGuestIdentity.
+  const { guest, setGuest, remember, signedIn } = useGuestIdentity();
   // Nothing is charged online yet, so every booking is recorded as settled on
   // site. Restore a real selector when a payment provider is wired up.
   const paymentMethod = "cash" as const;
@@ -100,7 +103,9 @@ export function CourtBookingFlow() {
   // --- Car wash cross-sell ---
   const [washResult, setWashResult] = useState<WashRecommendationResult | null>(null);
   const [loadingWash, setLoadingWash] = useState(false);
-  const [wantWash, setWantWash] = useState(false);
+  // Was a boolean over a single recommended slot. The club sells three washes;
+  // the customer now picks which one (or none), so this holds the choice itself.
+  const [chosenWash, setChosenWash] = useState<WashSuggestion | null>(null);
   const [washAdded, setWashAdded] = useState(false); // reflected in the success screen
 
   const next7Days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(new Date(), i)), []);
@@ -292,6 +297,7 @@ export function CourtBookingFlow() {
           tier: raw.tier,
           best: raw.best ? reviveSuggestion(raw.best) : null,
           alternatives: (raw.alternatives ?? []).map(reviveSuggestion),
+          perService: (raw.perService ?? []).map(reviveSuggestion),
         });
         // Always off by default. This used to switch itself on for a
         // "perfect_fit" match, which meant picking a court silently added GEL 8
@@ -299,7 +305,7 @@ export function CourtBookingFlow() {
         // for and untick it. An upsell the buyer has to opt out of is the kind
         // of thing that turns into an argument at the desk. Recommend it
         // prominently, but let them choose it.
-        setWantWash(false);
+        setChosenWash(null);
       })
       .catch(() => setWashResult(null))
       .finally(() => !cancelled && setLoadingWash(false));
@@ -317,9 +323,9 @@ export function CourtBookingFlow() {
       (sum, [id, qty]) => sum + (EQUIPMENT.find((e) => e.id === Number(id))?.price_cents ?? 0) * qty,
       0
     );
-    const washTotal = wantWash && washResult?.best ? washResult.best.service.priceCents : 0;
+    const washTotal = chosenWash ? chosenWash.service.priceCents : 0;
     return base + equipTotal + washTotal;
-  }, [selectedTime, duration, equipment, date, wantWash, washResult]);
+  }, [selectedTime, duration, equipment, date, chosenWash]);
 
   async function submitBooking() {
     if (!selectedCourt || !selectedTime) return;
@@ -355,20 +361,26 @@ export function CourtBookingFlow() {
       setBookingCode(data.booking.booking_code);
       setEmailSent(Boolean(data.emailSent));
 
+      // Now that the booking is real, keep these details for next time — on the
+      // account if they are signed in, in this browser if they are not. Doing it
+      // here rather than on every keystroke means a half-typed number never
+      // becomes the default.
+      remember(guest);
+
       // Cross-sell: if the customer opted into the recommended wash slot,
       // book it now, linked to the court booking that just succeeded.
       // This never blocks the court confirmation — if the wash bay got
       // taken in the last few seconds, the court booking still stands.
-      if (wantWash && washResult?.best) {
+      if (chosenWash) {
         try {
           const washRes = await fetch("/api/car-wash-bookings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              bayId: washResult.best.bayId,
-              startTime: washResult.best.start.toISOString(),
-              service: washResult.best.service.id,
-              durationMinutes: washResult.best.service.durationMinutes,
+              bayId: chosenWash.bayId,
+              startTime: chosenWash.start.toISOString(),
+              service: chosenWash.service.id,
+              durationMinutes: chosenWash.service.durationMinutes,
               guestName: guest.name,
               guestEmail: guest.email,
               paymentMethod,
@@ -644,8 +656,8 @@ export function CourtBookingFlow() {
                     <WashCrossSell
                       loading={loadingWash}
                       result={washResult}
-                      wantWash={wantWash}
-                      onToggle={setWantWash}
+                      chosen={chosenWash}
+                      onChoose={setChosenWash}
                     />
                   </div>
 
@@ -672,9 +684,18 @@ export function CourtBookingFlow() {
                       placeholder="Email"
                       type="email"
                       value={guest.email}
+                      readOnly={signedIn}
                       onChange={(e) => setGuest({ ...guest, email: e.target.value })}
-                      className="w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 text-sm text-ink outline-none focus:border-brand"
+                      className={cn(
+                        "w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 text-sm text-ink outline-none focus:border-brand",
+                        signedIn && "cursor-not-allowed text-ink-muted"
+                      )}
                     />
+                    {signedIn && (
+                      <p className="-mt-1 text-[11px] text-ink-muted">
+                        Booking as {guest.email} — the confirmation goes to your account.
+                      </p>
+                    )}
                     <input
                       placeholder="Phone"
                       value={guest.phone}
@@ -927,13 +948,13 @@ function SuccessPanel({
 function WashCrossSell({
   loading,
   result,
-  wantWash,
-  onToggle,
+  chosen,
+  onChoose,
 }: {
   loading: boolean;
   result: WashRecommendationResult | null;
-  wantWash: boolean;
-  onToggle: (v: boolean) => void;
+  chosen: WashSuggestion | null;
+  onChoose: (v: WashSuggestion | null) => void;
 }) {
   if (loading) {
     return (
@@ -943,7 +964,7 @@ function WashCrossSell({
     );
   }
 
-  if (!result || (!result.best && result.tier === "no_wash_today")) {
+  if (!result || result.perService.length === 0) {
     return (
       <p className="flex items-center gap-2 text-sm text-ink-muted">
         <Droplets className="h-4 w-4" /> Car wash is fully booked for the rest of today.
@@ -951,53 +972,82 @@ function WashCrossSell({
     );
   }
 
-  const { tier, best } = result;
+  const anyFitsTheMatch = result.perService.some((o) => o.tier !== "court_only");
 
-  if (tier === "court_only" && best) {
-    return (
-      <div className="rounded-court border border-line bg-surface-muted p-4">
-        <p className="flex items-center gap-2 text-sm font-medium text-ink">
-          <Droplets className="h-4 w-4 text-ink-muted" /> Car wash isn't free during your match
-        </p>
-        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-muted">
-          <Clock className="h-3.5 w-3.5" /> Nearest open slot: Bay {best.bayId}, {best.service.label},{" "}
-          {format(best.start, "HH:mm")}–{format(best.end, "HH:mm")}
-        </p>
-        <a href="/car-wash" className="mt-2 inline-block text-xs font-semibold text-brand">
-          Book it separately →
-        </a>
+  return (
+    <div>
+      <p className="flex items-center gap-2 text-sm font-medium text-ink">
+        <Droplets className="h-4 w-4 text-brand-accent" />
+        Wash your car while you play?
+      </p>
+      <p className="mt-1 text-xs text-ink-muted">
+        {anyFitsTheMatch
+          ? "Drop your keys at the bay — every wash we offer, with the earliest bay free for each."
+          : "Nothing lines up with your match today, but these are the next open slots."}
+      </p>
+
+      <div className="mt-3 space-y-2">
+        {result.perService.map((option) => {
+          const picked = chosen?.service.id === option.service.id;
+          const fits = option.tier !== "court_only";
+          return (
+            <label
+              key={option.service.id}
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-court border p-3 transition-colors",
+                picked ? "border-brand bg-brand-accent/5" : "border-line bg-surface-muted"
+              )}
+            >
+              <input
+                type="radio"
+                name="wash-service"
+                checked={picked}
+                onChange={() => onChoose(option)}
+                className="mt-0.5 h-4 w-4 accent-[#0066CC]"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
+                  {option.service.label}
+                  <span className="text-ink-muted">{formatMoney(option.service.priceCents)}</span>
+                  {option.tier === "perfect_fit" && (
+                    <span className="rounded-full bg-brand-accent/10 px-2 py-0.5 text-[10px] font-semibold text-brand-accent">
+                      Fits your match
+                    </span>
+                  )}
+                </p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-muted">
+                  <Clock className="h-3.5 w-3.5" />
+                  Bay {option.bayId} &middot; {format(option.start, "HH:mm")}–
+                  {format(option.end, "HH:mm")} &middot; {option.service.durationMinutes} min
+                </p>
+                {/* The engine's own words for why this slot is what it is —
+                    "ready 10 min before you finish" is worth more than a badge. */}
+                <p
+                  className={cn(
+                    "mt-0.5 text-xs font-medium",
+                    fits ? "text-brand-accent" : "text-ink-muted"
+                  )}
+                >
+                  {option.note}
+                </p>
+              </div>
+            </label>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={() => onChoose(null)}
+          className={cn(
+            "w-full rounded-court border p-3 text-left text-sm transition-colors",
+            chosen === null
+              ? "border-brand bg-brand-accent/5 font-medium text-ink"
+              : "border-line text-ink-muted hover:border-ink-muted/40"
+          )}
+        >
+          No wash this time
+        </button>
       </div>
-    );
-  }
-
-  if (best) {
-    return (
-      <label className="flex cursor-pointer items-start gap-3 rounded-court border border-line bg-surface-muted p-4">
-        <input
-          type="checkbox"
-          checked={wantWash}
-          onChange={(e) => onToggle(e.target.checked)}
-          className="mt-0.5 h-4 w-4 accent-[#0066CC]"
-        />
-        <div>
-          <p className="flex items-center gap-2 text-sm font-medium text-ink">
-            <Droplets className="h-4 w-4 text-brand-accent" />
-            Wash your car while you play?
-            {tier === "perfect_fit" && (
-              <span className="rounded-full bg-brand-accent/10 px-2 py-0.5 text-[10px] font-semibold text-brand-accent">
-                Recommended
-              </span>
-            )}
-          </p>
-          <p className="mt-1 text-xs text-ink-muted">
-            Bay {best.bayId} &middot; {best.service.label} &middot; {format(best.start, "HH:mm")}–
-            {format(best.end, "HH:mm")} &middot; {formatMoney(best.service.priceCents)}
-          </p>
-          <p className="mt-1 text-xs font-medium text-brand-accent">{best.note}</p>
-        </div>
-      </label>
-    );
-  }
-
-  return null;
+    </div>
+  );
 }

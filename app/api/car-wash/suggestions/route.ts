@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { recommendWashForCourtSlot, type WashService, type BayBooking } from "@/lib/carwash/suggest";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { clubDateKey, clubDayBounds } from "@/lib/time/club";
 
 const QuerySchema = z.object({
   courtStart: z.string().datetime(),
@@ -32,17 +33,24 @@ export async function GET(req: NextRequest) {
 
   const courtStart = new Date(parsed.data.courtStart);
   const courtEnd = new Date(courtStart.getTime() + parsed.data.durationMinutes * 60_000);
+  // The club's day, not UTC's — at UTC+4 a naive date slice loses the first
+  // four hours of bookings and picks up four from the day before.
+  const { start: dayStart, end: dayEnd } = clubDayBounds(clubDateKey(courtStart));
 
   const supabase = createServiceRoleClient();
 
   const [{ data: pricingRules }, { data: bookingsToday }] = await Promise.all([
     supabase.from("pricing_rules").select("*").eq("scope", "car_wash"),
+    // `slot` is a tstzrange. Comparing it to a timestamp string makes Postgres
+    // fail with `malformed range literal`, which PostgREST returns as an error
+    // and this code silently read as "no bookings" — so every bay looked free
+    // and the wash was offered on top of cars already booked in. The range
+    // operator is the only correct comparison here.
     supabase
       .from("wash_bookings")
       .select("bay_id, slot, status")
       .in("status", ["pending", "confirmed"])
-      .gte("slot", new Date(courtStart).toISOString().slice(0, 10))
-      .lte("slot", new Date(courtStart).toISOString().slice(0, 10) + "T23:59:59Z"),
+      .overlaps("slot", `[${dayStart.toISOString()},${dayEnd.toISOString()})`),
   ]);
 
   const services: WashService[] = (pricingRules ?? []).map((r) => ({

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Loader2, Phone, Mail, UserCheck } from "lucide-react";
+import { Loader2, Phone, Mail, UserCheck, Trash2 } from "lucide-react";
 import { formatMoney } from "@/lib/currency";
 import { CLUB_TIMEZONE } from "@/lib/time/club";
 import { cn } from "@/lib/utils/cn";
@@ -36,6 +36,11 @@ const CANCEL_MESSAGES: Record<string, string> = {
   ALREADY_CANCELLED: "That booking is already cancelled.",
   BOOKING_NOT_FOUND: "That booking no longer exists.",
   NOT_CANCELLABLE: "Completed and no-show bookings can't be cancelled.",
+  FORBIDDEN: "Your session has expired — sign in again.",
+};
+
+const DELETE_MESSAGES: Record<string, string> = {
+  BOOKING_NOT_FOUND: "That booking no longer exists.",
   FORBIDDEN: "Your session has expired — sign in again.",
 };
 
@@ -83,6 +88,51 @@ export function BookingsTable({ rows }: { rows: AdminBooking[] }) {
             ? `Cancelled — ${formatMoney(r.credit_cents ?? 0)} issued as credit, code ${r.credit_code}.`
             : "Cancelled — the slot is back on sale."
       );
+      router.refresh();
+    } catch {
+      setError("Network error — try again.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /**
+   * Delete is not a stronger cancel — it is a different thing, and the
+   * confirmation says so. Cancelling records that a booking happened and was
+   * called off; deleting is for rows that should never have existed at all
+   * (a test, a duplicate, a wrong number). It cannot be undone and it leaves
+   * nothing behind, so the wording avoids "cancel" entirely.
+   */
+  async function remove(b: AdminBooking) {
+    const ok = window.confirm(
+      `Delete ${b.resource} on ${b.startIso ? when.format(new Date(b.startIso)) : "—"} for ` +
+        `${b.name ?? "this guest"}?\n\n` +
+        `The booking and its record disappear completely — no refund, no credit, ` +
+        `nothing in the history. Use Cancel instead if the customer called it off.\n\n` +
+        `This cannot be undone.`
+    );
+    if (!ok) return;
+
+    setBusyId(b.id);
+    setError(null);
+    setDone(null);
+    try {
+      const res = await fetch("/api/admin/bookings/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingType: b.kind, bookingId: b.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(
+          data.error === "HAS_CREDIT_NOTE"
+            ? `That booking issued credit note ${data.creditCode}, which the club still owes. ` +
+              `It can be cancelled, but not deleted.`
+            : (DELETE_MESSAGES[data.error] ?? "Couldn't delete that booking.")
+        );
+        return;
+      }
+      setDone(`Deleted ${data.deleted?.booking_code ?? "the booking"} — the slot is free again.`);
       router.refresh();
     } catch {
       setError("Network error — try again.");
@@ -186,16 +236,27 @@ export function BookingsTable({ rows }: { rows: AdminBooking[] }) {
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right">
-                    {!cancelled && (
+                    <div className="flex items-center justify-end gap-2">
+                      {!cancelled && (
+                        <button
+                          onClick={() => cancel(b)}
+                          disabled={busyId === b.id}
+                          className="inline-flex items-center gap-1.5 rounded-court border border-line px-3 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                        >
+                          {busyId === b.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                          Cancel
+                        </button>
+                      )}
                       <button
-                        onClick={() => cancel(b)}
+                        onClick={() => remove(b)}
                         disabled={busyId === b.id}
-                        className="inline-flex items-center gap-1.5 rounded-court border border-line px-3 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                        title="Delete this booking permanently"
+                        aria-label={`Delete booking ${b.code}`}
+                        className="inline-flex items-center gap-1.5 rounded-court border border-line px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                       >
-                        {busyId === b.id && <Loader2 className="h-3 w-3 animate-spin" />}
-                        Cancel
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               );
