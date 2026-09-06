@@ -16,11 +16,15 @@ import {
   BarChart,
   Bar,
   Legend,
+  ReferenceLine,
 } from "recharts";
 import { format } from "date-fns";
 import { Send, Download, Lock, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { addDays, parseISO } from "date-fns";
 import { formatMoney } from "@/lib/pricing";
+
+const exportItem =
+  "block rounded-court px-2 py-1.5 text-sm text-ink hover:bg-surface-muted";
 
 type DailySummary = {
   date: string;
@@ -59,6 +63,9 @@ export function AdminDashboard({
   gridBookings,
   dateLabel,
   isToday,
+  chartFrom,
+  chartTo,
+  todayKey,
 }: {
   adminName: string;
   dailySummaries: DailySummary[];
@@ -68,13 +75,18 @@ export function AdminDashboard({
   gridBookings: CourtMapBooking[];
   dateLabel: string;
   isToday: boolean;
+  chartFrom: string;
+  chartTo: string;
+  todayKey: string;
 }) {
   const router = useRouter();
   const [sendingReport, setSendingReport] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [reportMsg, setReportMsg] = useState<string | null>(null);
 
   const chartData = dailySummaries.map((d) => ({
     date: format(new Date(d.date), "MMM d"),
+    key: d.date,
     Courts: d.court_revenue_cents / 100,
     "Car wash": d.car_wash_revenue_cents / 100,
     Extras: d.extras_revenue_cents / 100,
@@ -82,11 +94,33 @@ export function AdminDashboard({
 
   const occupancyData = dailySummaries.map((d) => ({
     date: format(new Date(d.date), "MMM d"),
+    key: d.date,
     Courts: d.court_utilization_pct,
     "Car wash": d.wash_utilization_pct,
   }));
 
-  const todayTotal = dailySummaries[dailySummaries.length - 1]?.total_revenue_cents ?? 0;
+  /** Where today sits on the axis. Left of it is money taken, right of it is
+   *  money booked — the line is what keeps the two from being read as one. */
+  const todayLabel = chartData.find((d) => d.key === todayKey)?.date ?? null;
+
+  // The window now runs into the future, so "the last row" is no longer today.
+  const todaySummary = dailySummaries.find((d) => d.date === todayKey);
+  const todayTotal = todaySummary?.total_revenue_cents ?? 0;
+
+  const windowLabel = `${format(new Date(chartFrom), "d MMM")} – ${format(
+    new Date(chartTo),
+    "d MMM"
+  )}`;
+
+  function shiftWindow(days: number) {
+    const shift = (key: string) => {
+      const d = addDays(parseISO(key), days);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+        d.getDate()
+      ).padStart(2, "0")}`;
+    };
+    router.push(`/admin?from=${shift(chartFrom)}&to=${shift(chartTo)}`);
+  }
 
   /** Step the court map a day at a time, staying on the club's calendar. */
   function goToDay(delta: number) {
@@ -110,25 +144,24 @@ export function AdminDashboard({
     }
   }
 
-  function exportCsv() {
-    const rows = [
-      ["Date", "Court Revenue", "Car Wash Revenue", "Extras Revenue", "Total"],
-      ...dailySummaries.map((d) => [
-        d.date,
-        (d.court_revenue_cents / 100).toFixed(2),
-        (d.car_wash_revenue_cents / 100).toFixed(2),
-        (d.extras_revenue_cents / 100).toFixed(2),
-        (d.total_revenue_cents / 100).toFixed(2),
-      ]),
-    ];
-    const csv = rows.map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `revenue-${format(new Date(), "yyyy-MM-dd")}.csv`;
-    a.click();
+  /**
+   * Exports come from the server, not from the chart.
+   *
+   * This used to build a CSV in the browser out of whatever the chart happened
+   * to be showing, so the "export" could never contain more than was already on
+   * screen — and never the bookings themselves. /api/admin/export reads the
+   * rows, cancelled ones included, and an omitted range means everything.
+   */
+  function exportUrl(dataset: "summary" | "bookings" | "payments", ranged: boolean) {
+    const params = new URLSearchParams({ dataset });
+    if (ranged) {
+      params.set("from", chartFrom);
+      params.set("to", chartTo);
+    }
+    return `/api/admin/export?${params.toString()}`;
   }
+
+
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-10">
@@ -144,12 +177,46 @@ export function AdminDashboard({
           </Link>
         </div>
         <div className="flex gap-3">
-          <button
-            onClick={exportCsv}
-            className="flex items-center gap-2 rounded-court border border-line px-4 py-2 text-sm text-ink-muted hover:border-ink-muted/40"
-          >
-            <Download className="h-4 w-4" /> Export CSV
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setExportOpen((v) => !v)}
+              className="flex items-center gap-2 rounded-court border border-line px-4 py-2 text-sm text-ink-muted hover:border-ink-muted/40"
+            >
+              <Download className="h-4 w-4" /> Export
+            </button>
+            {exportOpen && (
+              <div
+                className="absolute right-0 z-20 mt-2 w-64 rounded-court border border-line bg-surface-base p-2 shadow-card"
+                onMouseLeave={() => setExportOpen(false)}
+              >
+                <p className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase text-ink-muted">
+                  Shown window ({windowLabel})
+                </p>
+                <a href={exportUrl("summary", true)} className={exportItem}>
+                  Daily totals
+                </a>
+                <a href={exportUrl("bookings", true)} className={exportItem}>
+                  Bookings
+                </a>
+                <a href={exportUrl("payments", true)} className={exportItem}>
+                  Payments
+                </a>
+                <p className="mt-2 border-t border-line px-2 pb-1 pt-2 text-[11px] font-semibold uppercase text-ink-muted">
+                  Everything, all time
+                </p>
+                <a href={exportUrl("bookings", false)} className={exportItem}>
+                  All bookings
+                </a>
+                <a href={exportUrl("payments", false)} className={exportItem}>
+                  All payments
+                </a>
+                <p className="px-2 pb-1 pt-2 text-[11px] leading-snug text-ink-muted">
+                  Includes cancelled bookings. Keep a copy somewhere that isn&apos;t the
+                  database.
+                </p>
+              </div>
+            )}
+          </div>
           <button
             onClick={sendReportNow}
             disabled={sendingReport}
@@ -167,17 +234,64 @@ export function AdminDashboard({
         <StatCard label="Today's revenue" value={formatMoney(todayTotal)} />
         <StatCard
           label="Court utilization"
-          value={`${dailySummaries[dailySummaries.length - 1]?.court_utilization_pct ?? 0}%`}
+          value={`${todaySummary?.court_utilization_pct ?? 0}%`}
         />
         <StatCard
           label="Car wash utilization"
-          value={`${dailySummaries[dailySummaries.length - 1]?.wash_utilization_pct ?? 0}%`}
+          value={`${todaySummary?.wash_utilization_pct ?? 0}%`}
         />
       </div>
 
+      {/* One control for both charts: the window runs half a month back and half
+          a month forward, so "how did it go" and "how does it look" share an
+          axis. The line at today is what stops the two being read as one. */}
+      <div className="mt-8 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          aria-label="Earlier"
+          onClick={() => shiftWindow(-15)}
+          className="rounded-court border border-line bg-surface-base p-1.5 text-ink-muted hover:text-ink"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <input
+          type="date"
+          value={chartFrom}
+          onChange={(e) => e.target.value && router.push(`/admin?from=${e.target.value}&to=${chartTo}`)}
+          className="rounded-court border border-line bg-surface-base px-3 py-1.5 text-sm text-ink"
+        />
+        <span className="text-sm text-ink-muted">to</span>
+        <input
+          type="date"
+          value={chartTo}
+          onChange={(e) => e.target.value && router.push(`/admin?from=${chartFrom}&to=${e.target.value}`)}
+          className="rounded-court border border-line bg-surface-base px-3 py-1.5 text-sm text-ink"
+        />
+        <button
+          type="button"
+          aria-label="Later"
+          onClick={() => shiftWindow(15)}
+          className="rounded-court border border-line bg-surface-base p-1.5 text-ink-muted hover:text-ink"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push("/admin")}
+          className="rounded-court border border-line bg-surface-base px-3 py-1.5 text-sm font-medium text-brand"
+        >
+          Reset
+        </button>
+      </div>
+
       {/* Revenue chart */}
-      <div className="mt-8 rounded-court border border-line bg-surface-base shadow-card p-6">
-        <h2 className="mb-4 font-heading text-lg font-bold text-ink">Revenue — last 14 days</h2>
+      <div className="mt-4 rounded-court border border-line bg-surface-base shadow-card p-6">
+        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-heading text-lg font-bold text-ink">Revenue — {windowLabel}</h2>
+          <p className="text-xs text-ink-muted">
+            Left of the line: taken. Right of it: already booked.
+          </p>
+        </div>
         <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={chartData}>
             <defs>
@@ -188,12 +302,15 @@ export function AdminDashboard({
             </defs>
             <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="date" stroke="#4A5568" fontSize={12} />
-            <YAxis stroke="#4A5568" fontSize={12} tickFormatter={(v) => `$${v}`} />
+            <YAxis stroke="#4A5568" fontSize={12} tickFormatter={(v) => `₾${v}`} />
             <Tooltip
               contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10 }}
               labelStyle={{ color: "#001A33" }}
             />
             <Legend />
+            {todayLabel && (
+              <ReferenceLine x={todayLabel} stroke="#001A33" strokeDasharray="4 4" label={{ value: "today", position: "top", fontSize: 11, fill: "#4A5568" }} />
+            )}
             <Area type="monotone" dataKey="Courts" stroke="#0066CC" fill="url(#courts)" strokeWidth={2} />
             <Area type="monotone" dataKey="Car wash" stroke="#00BFA5" fillOpacity={0.08} fill="#00BFA5" strokeWidth={2} />
             <Area type="monotone" dataKey="Extras" stroke="#F59E0B" fillOpacity={0.06} fill="#F59E0B" strokeWidth={1.5} />
@@ -203,7 +320,9 @@ export function AdminDashboard({
 
       {/* Occupancy chart */}
       <div className="mt-8 rounded-court border border-line bg-surface-base shadow-card p-6">
-        <h2 className="mb-4 font-heading text-lg font-bold text-ink">Occupancy rate</h2>
+        <h2 className="mb-4 font-heading text-lg font-bold text-ink">
+          Occupancy rate — {windowLabel}
+        </h2>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={occupancyData}>
             <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
@@ -211,6 +330,9 @@ export function AdminDashboard({
             <YAxis stroke="#4A5568" fontSize={12} unit="%" />
             <Tooltip contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10 }} />
             <Legend />
+            {todayLabel && (
+              <ReferenceLine x={todayLabel} stroke="#001A33" strokeDasharray="4 4" />
+            )}
             <Bar dataKey="Courts" fill="#0066CC" radius={[4, 4, 0, 0]} />
             <Bar dataKey="Car wash" fill="#00BFA5" radius={[4, 4, 0, 0]} />
           </BarChart>

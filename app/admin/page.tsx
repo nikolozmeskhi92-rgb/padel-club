@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; from?: string; to?: string }>;
 }) {
-  const { date: requestedDate } = await searchParams;
+  const { date: requestedDate, from: requestedFrom, to: requestedTo } = await searchParams;
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -30,23 +30,31 @@ export default async function AdminPage({
     redirect("/");
   }
 
-  // Last 14 days of aggregated revenue for the chart (server-side RPC call, one per day
-  // kept simple here — in production wrap this in a single SQL view for efficiency).
-  // get_daily_summary() buckets by the club's calendar day (see club_timezone()
-  // in migration 0002), so the dates asked for have to be the club's too —
-  // toISOString() would ask for UTC days and shift the whole chart.
-  const days = Array.from({ length: 14 }, (_, i) => {
+  // The chart window: half a month back, half a month forward. Backwards is
+  // money taken, forwards is money booked, and an owner asks both questions in
+  // the same breath — "how did the fortnight go, and how does the next one
+  // look?". get_daily_summary() buckets by the CLUB's calendar day (see
+  // club_timezone() in migration 0002), so the dates asked for have to be the
+  // club's too: toISOString() would ask for UTC days and shift the whole chart.
+  const DEFAULT_WINDOW_DAYS = 15;
+  const dayKeyOffset = (offset: number) => {
     const d = new Date();
-    d.setDate(d.getDate() - (13 - i));
+    d.setDate(d.getDate() + offset);
     return clubDateKey(d);
+  };
+  const isDateKey = (v: string | undefined) => /^\d{4}-\d{2}-\d{2}$/.test(v ?? "");
+
+  let chartFrom = isDateKey(requestedFrom) ? requestedFrom! : dayKeyOffset(-DEFAULT_WINDOW_DAYS);
+  let chartTo = isDateKey(requestedTo) ? requestedTo! : dayKeyOffset(DEFAULT_WINDOW_DAYS);
+  if (chartFrom > chartTo) [chartFrom, chartTo] = [chartTo, chartFrom];
+
+  // One round trip for the whole window (migration 0011), not one call per day.
+  const { data: rangeRows } = await supabase.rpc("get_summary_range", {
+    p_from: chartFrom,
+    p_to: chartTo,
   });
 
-  const summaries = await Promise.all(
-    days.map(async (date) => {
-      const { data } = await supabase.rpc("get_daily_summary", { p_date: date }).single();
-      return { date, ...(data as any) };
-    })
-  );
+  const summaries = ((rangeRows ?? []) as any[]).map((r) => ({ ...r, date: r.day }));
 
   // `slot` is a tstzrange, so it needs the range overlap operator — comparing it
   // to a date string makes Postgres try to read that string as a range and fail
@@ -112,6 +120,9 @@ export default async function AdminPage({
       gridBookings={gridBookings}
       dateLabel={viewDate}
       isToday={viewDate === today}
+      chartFrom={chartFrom}
+      chartTo={chartTo}
+      todayKey={today}
       adminName={profile.full_name ?? "Admin"}
       dailySummaries={summaries}
       courtBookingsToday={todaysCourtBookings ?? []}
