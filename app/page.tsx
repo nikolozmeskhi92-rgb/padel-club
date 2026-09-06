@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { ArrowRight, Shirt, Timer, ShieldCheck, MapPin, Clock } from "lucide-react";
+// Car, not Shirt: the icon next to "car wash" was a t-shirt, which reads as
+// merchandise. Same icon family, so the weight and stroke still match the row.
+import { ArrowRight, Car, Timer, ShieldCheck, MapPin, Clock } from "lucide-react";
 import { formatMoney } from "@/lib/currency";
 import { CLOSE_HOUR, FREE_CANCELLATION_HOURS, OPEN_HOUR } from "@/lib/time/club";
 
@@ -81,7 +83,7 @@ export default function HomePage() {
               href="/car-wash"
               className="flex items-center gap-2 rounded-court border border-white/25 bg-white/10 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
             >
-              <Shirt className="h-4 w-4" />
+              <Car className="h-4 w-4" />
               Book a car wash only
             </Link>
           </div>
@@ -103,7 +105,7 @@ export default function HomePage() {
             body="The court you see is the court you get. Slots lock the moment you book — no double-bookings, ever."
           />
           <Feature
-            icon={<Shirt className="h-5 w-5" />}
+            icon={<Car className="h-5 w-5" />}
             title="Courtside car wash"
             body="Drop your keys before you play, drive off clean when you're done. Add it to any court booking."
           />
