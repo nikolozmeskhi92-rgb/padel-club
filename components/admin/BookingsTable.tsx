@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Loader2, Phone, Mail, UserCheck, Trash2 } from "lucide-react";
+import { Loader2, Phone, Mail, UserCheck, Trash2, Banknote, CalendarClock } from "lucide-react";
+import { RescheduleDialog } from "@/components/admin/RescheduleDialog";
 import { formatMoney } from "@/lib/currency";
 import { CLUB_TIMEZONE } from "@/lib/time/club";
 import { cn } from "@/lib/utils/cn";
@@ -47,6 +48,10 @@ const DELETE_MESSAGES: Record<string, string> = {
 export function BookingsTable({ rows }: { rows: AdminBooking[] }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Which row has its cash/card choice open. Settling is two taps on purpose:
+      "which way did they pay" is the part the takings breakdown depends on. */
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [moving, setMoving] = useState<AdminBooking | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
@@ -133,6 +138,45 @@ export function BookingsTable({ rows }: { rows: AdminBooking[] }) {
         return;
       }
       setDone(`Deleted ${data.deleted?.booking_code ?? "the booking"} — the slot is free again.`);
+      router.refresh();
+    } catch {
+      setError("Network error — try again.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /**
+   * Take the money. Pay-on-site left every booking `unpaid` for ever, which
+   * made the paid/unpaid colouring meaningless and the revenue figure a count
+   * of money nobody had handed over.
+   */
+  async function settle(b: AdminBooking, method: "cash" | "card" | "comp") {
+    setBusyId(b.id);
+    setPayingId(null);
+    setError(null);
+    setDone(null);
+    try {
+      const res = await fetch("/api/admin/bookings/mark-paid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingType: b.kind, bookingId: b.id, method }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(
+          data.error === "ALREADY_PAID"
+            ? "That booking is already marked paid."
+            : data.error === "NOT_SETTLEABLE"
+              ? "A cancelled booking can't be settled."
+              : "Couldn't mark that booking paid."
+        );
+        return;
+      }
+      setDone(
+        `${data.settled?.booking_code ?? "Booking"} settled — ` +
+          `${formatMoney(data.settled?.amount_cents ?? b.priceCents)} by ${method}.`
+      );
       router.refresh();
     } catch {
       setError("Network error — try again.");
@@ -236,7 +280,45 @@ export function BookingsTable({ rows }: { rows: AdminBooking[] }) {
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {!cancelled && b.paymentStatus !== "paid" && (
+                        payingId === b.id ? (
+                          <span className="inline-flex items-center gap-1 rounded-court border border-brand/40 bg-brand-accent/5 p-1">
+                            {(["cash", "card", "comp"] as const).map((m) => (
+                              <button
+                                key={m}
+                                onClick={() => settle(b, m)}
+                                className="rounded px-2 py-1 text-xs font-semibold capitalize text-ink hover:bg-brand hover:text-white"
+                              >
+                                {m}
+                              </button>
+                            ))}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setPayingId(b.id)}
+                            disabled={busyId === b.id}
+                            className="inline-flex items-center gap-1.5 rounded-court border border-line px-3 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-brand hover:text-brand disabled:opacity-50"
+                          >
+                            {busyId === b.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Banknote className="h-3.5 w-3.5" />
+                            )}
+                            Mark paid
+                          </button>
+                        )
+                      )}
+                      {!cancelled && b.kind === "court" && (
+                        <button
+                          onClick={() => setMoving(b)}
+                          disabled={busyId === b.id}
+                          className="inline-flex items-center gap-1.5 rounded-court border border-line px-3 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-brand hover:text-brand disabled:opacity-50"
+                        >
+                          <CalendarClock className="h-3.5 w-3.5" />
+                          Move
+                        </button>
+                      )}
                       {!cancelled && (
                         <button
                           onClick={() => cancel(b)}
@@ -264,6 +346,19 @@ export function BookingsTable({ rows }: { rows: AdminBooking[] }) {
           </tbody>
         </table>
       </div>
+
+      {moving && (
+        <RescheduleDialog
+          booking={moving}
+          onClose={() => setMoving(null)}
+          onDone={(message) => {
+            setMoving(null);
+            setError(null);
+            setDone(message);
+            router.refresh();
+          }}
+        />
+      )}
     </>
   );
 }

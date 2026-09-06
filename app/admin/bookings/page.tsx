@@ -3,6 +3,7 @@ import { requireStaff } from "@/lib/auth/staff";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { clubDateKey, clubDayBounds, CLUB_TIMEZONE } from "@/lib/time/club";
 import { pageTitle } from "@/lib/club";
+import { formatMoney } from "@/lib/currency";
 import { BookingsTable, type AdminBooking } from "@/components/admin/BookingsTable";
 
 export const metadata = { title: pageTitle("Bookings") };
@@ -42,6 +43,12 @@ export default async function AdminBookingsPage({
     let b = builder.overlaps("slot", window);
     if (status === "active") b = b.in("status", ["pending", "confirmed"]);
     else if (status === "cancelled") b = b.eq("status", "cancelled");
+    // "Who still owes us?" is the question at the end of a shift, and it is a
+    // different question from "what is booked" — a cancelled booking is not a
+    // debt, so this stays inside the live ones.
+    else if (status === "unpaid") {
+      b = b.in("status", ["pending", "confirmed"]).eq("payment_status", "unpaid");
+    }
     if (q) {
       // Search the things a caller can actually give you over the phone.
       b = b.or(
@@ -172,6 +179,7 @@ export default async function AdminBookingsPage({
             className="rounded-court border border-line bg-surface-muted px-3 py-2 text-sm outline-none focus:border-brand"
           >
             <option value="active">Active</option>
+            <option value="unpaid">Unpaid</option>
             <option value="cancelled">Cancelled</option>
             <option value="all">All</option>
           </select>
@@ -183,6 +191,14 @@ export default async function AdminBookingsPage({
 
       <p className="mt-4 text-sm text-ink-muted">
         {filtered.length} booking{filtered.length === 1 ? "" : "s"}
+        {status === "unpaid" && filtered.length > 0 && (
+          <>
+            {" · "}
+            <span className="font-semibold text-ink">
+              {formatMoney(filtered.reduce((sum, r) => sum + r.priceCents, 0))} outstanding
+            </span>
+          </>
+        )}
       </p>
 
       <BookingsTable rows={filtered} />
