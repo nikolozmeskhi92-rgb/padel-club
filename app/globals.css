@@ -162,6 +162,21 @@
 }
 
 @layer utilities {
+  /*
+     A block that is empty but cannot hold a booking of the chosen length.
+     Tinting it slightly darker was not enough — beside "free" the two greys
+     were the same square. Stripes read as "blocked" at a glance and survive
+     colour blindness, which a second grey does not.
+  */
+  .slot-unavailable {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgba(74, 85, 104, 0.16) 0 3px,
+      transparent 3px 7px
+    );
+    background-color: rgb(245 247 250);
+  }
+
   .court-lines-bg {
     background-image:
       linear-gradient(rgba(0,102,204,0.05) 1px, transparent 1px),

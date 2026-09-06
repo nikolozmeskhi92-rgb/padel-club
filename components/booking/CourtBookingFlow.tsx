@@ -449,7 +449,16 @@ export function CourtBookingFlow({
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-7 sm:px-8 py-12">
+    <div
+      className={cn(
+        "mx-auto max-w-5xl px-7 py-12 sm:px-8",
+        // The summary bar is fixed to the bottom of the screen, so on a phone it
+        // sat on top of the last rows of the court map: tapping a court down
+        // there hit the bar instead of the block, and nothing happened. Give the
+        // page the bar's height back so every block stays reachable.
+        selectedCourt && selectedTime && step === "slot" && "pb-32"
+      )}
+    >
       <h1 className="font-heading text-3xl font-extrabold uppercase tracking-tight text-ink md:text-4xl">Book a court</h1>
       <p className="mt-2 text-ink-muted">Pick a day and a time — we&apos;ll show you which courts are free.</p>
 
@@ -617,6 +626,12 @@ export function CourtBookingFlow({
               dateLabel={format(date, "EEE d MMM")}
               variant="public"
               pastBeforeMinutes={pastBeforeMinutes}
+              // The map asks the flow the same question the flow asks itself,
+              // so a block can never look bookable and then refuse the tap.
+              isSelectable={(courtId, time) =>
+                isCourtFree(courtId, time, duration) && !isPast(time)
+              }
+              durationMinutes={duration}
               selected={
                 selectedCourt && selectedTime
                   ? {
@@ -648,7 +663,7 @@ export function CourtBookingFlow({
             initial={{ y: 80, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 80, opacity: 0 }}
-            className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 backdrop-blur-md"
+            className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
           >
             <div className="mx-auto flex max-w-5xl items-center justify-between px-7 sm:px-8 py-4">
               <div>

@@ -38,6 +38,8 @@ export function CourtMap({
   title,
   selected = null,
   onSelect,
+  isSelectable,
+  durationMinutes,
   pastBeforeMinutes = null,
   className,
 }: {
@@ -50,6 +52,20 @@ export function CourtMap({
   selected?: { courtId: number; minutes: number; spanMinutes: number } | null;
   /** Public variant only: clicking a free cell hands back the court and "HH:MM". */
   onSelect?: (courtId: number, time: string) => void;
+  /**
+   * Public variant only: can a booking actually START here?
+   *
+   * A half-hour being empty is not the same as being bookable. A 60-minute
+   * booking needs the next block free too, a 90-minute one the next two, and
+   * neither may run past closing. Without this the map painted 17% of its free
+   * blocks as clickable and then silently swallowed the tap — you could sit
+   * there pressing 18:30 in front of a 19:00 booking and nothing would ever
+   * happen. The map now shows those blocks as free but unavailable and says
+   * why, instead of pretending and then refusing.
+   */
+  isSelectable?: (courtId: number, time: string) => boolean;
+  /** Shown in the legend so "why is this one grey" has an answer on screen. */
+  durationMinutes?: number;
   /** Minutes-since-midnight before which today has already gone. Null for other days. */
   pastBeforeMinutes?: number | null;
   className?: string;
@@ -126,12 +142,17 @@ export function CourtMap({
         </p>
       </div>
 
+      {/*
+        The court names are pinned to the left edge. A phone can only show about
+        half the trading day at once, so the names scrolled away with it and you
+        were left tapping an unlabelled grid, guessing which row was which court.
+      */}
       <div className="mt-4 overflow-x-auto">
-        <div className="min-w-[900px]">
+        <div className="min-w-[720px] sm:min-w-[900px]">
           {/* Hour ruler. Only whole hours are labelled — a label every half hour
               is unreadable at this width. */}
           <div className="flex">
-            <div className="w-24 shrink-0" />
+            <div className="sticky left-0 z-10 w-[4.75rem] shrink-0 bg-surface-base sm:w-24" />
             {slots.map((s) => (
               <div key={s.minutes} className="flex-1 pb-1 text-center text-[10px] text-ink-muted">
                 {s.minutes % 60 === 0 ? s.label : ""}
@@ -141,10 +162,10 @@ export function CourtMap({
 
           {courts.map((court) => (
             <div key={court.id} className="flex items-stretch">
-              <div className="flex w-24 shrink-0 items-center gap-1.5 py-0.5 pr-2 text-xs">
+              <div className="sticky left-0 z-10 flex w-[4.75rem] shrink-0 items-center gap-1 whitespace-nowrap bg-surface-base py-0.5 pr-2 text-[11px] sm:w-24 sm:gap-1.5 sm:text-xs">
                 <span className="font-semibold text-ink">{court.name}</span>
                 {court.indoor && (
-                  <span className="rounded bg-surface-muted px-1 text-[9px] uppercase text-ink-muted">
+                  <span className="rounded bg-surface-muted px-1 text-[8px] uppercase text-ink-muted sm:text-[9px]">
                     in
                   </span>
                 )}
@@ -156,7 +177,12 @@ export function CourtMap({
                 const past = pastBeforeMinutes !== null && s.minutes < pastBeforeMinutes;
                 const picked = isSelected(court.id, s.minutes);
                 const isHovered = b && b.code && hovered === b.code;
-                const clickable = isPublic && !b && !past && Boolean(onSelect);
+                // Free, but a booking of the chosen length cannot start here.
+                const tooShort =
+                  isPublic && !b && !past && Boolean(onSelect) && isSelectable
+                    ? !isSelectable(court.id, s.label)
+                    : false;
+                const clickable = isPublic && !b && !past && !tooShort && Boolean(onSelect);
 
                 const label = past
                   ? `${court.name} ${s.label} — gone`
@@ -164,7 +190,11 @@ export function CourtMap({
                     ? isPublic
                       ? `${court.name} ${s.label} — booked`
                       : `${court.name} ${s.label} — ${b.guest ?? "guest"} (${b.code}, ${b.paymentStatus})`
-                    : `${court.name} ${s.label} — free`;
+                    : tooShort
+                      ? `${court.name} ${s.label} — free, but not enough room for ${
+                          durationMinutes ?? 60
+                        } minutes`
+                      : `${court.name} ${s.label} — free`;
 
                 const cellClass = cn(
                   "m-[1px] h-7 flex-1 rounded-[3px] border transition-colors",
@@ -176,7 +206,9 @@ export function CourtMap({
                         : b.paymentStatus === "paid"
                           ? "border-brand/30 bg-brand/70"
                           : "border-peak/30 bg-peak/60"
-                      : "border-line bg-surface-muted/60 hover:bg-brand/10",
+                      : tooShort
+                        ? "slot-unavailable border-line/70"
+                        : "border-line bg-surface-muted/60 hover:bg-brand/10",
                   picked && "border-brand bg-brand ring-2 ring-brand/40",
                   isHovered && "ring-2 ring-ink/40",
                   clickable && "cursor-pointer"
@@ -219,13 +251,19 @@ export function CourtMap({
             <span className="flex items-center gap-1.5">
               <span className="h-3 w-5 rounded-[3px] border border-ink/20 bg-ink/30" /> booked
             </span>
+            {isSelectable && (
+              <span className="flex items-center gap-1.5">
+                <span className="slot-unavailable h-3 w-5 rounded-[3px] border border-line/70" /> free, too
+                short for {durationMinutes ?? 60} min
+              </span>
+            )}
             {pastBeforeMinutes !== null && (
               <span className="flex items-center gap-1.5">
                 <span className="h-3 w-5 rounded-[3px] border border-dashed border-line/70" />{" "}
                 already gone
               </span>
             )}
-            {onSelect && <span>Click a free block to pick it.</span>}
+            {onSelect && <span>Tap a free block to pick it.</span>}
           </>
         ) : (
           <>
