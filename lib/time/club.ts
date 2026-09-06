@@ -103,3 +103,23 @@ export function buildSlotLabels(stepMinutes = 30): string[] {
  * or read the row server-side if the club starts changing it often.
  */
 export const FREE_CANCELLATION_HOURS = 24;
+
+/**
+ * How far ahead the public may book, in days.
+ *
+ * A club that lets anyone reserve six months of Saturday evenings finds them
+ * held by people who never turn up. Seven days is the window the desk can
+ * actually manage; anything further is arranged by talking to someone, which
+ * is also when a deposit or a standing slot gets agreed. Staff are not bound
+ * by it — see CLUB_STAFF_HORIZON_DAYS.
+ */
+export const PUBLIC_HORIZON_DAYS = 7;
+
+/** How far ahead the desk may book on a caller's behalf. */
+export const STAFF_HORIZON_DAYS = 30;
+
+/** Whether an instant is inside the booking window for this kind of caller. */
+export function isWithinBookingHorizon(instant: Date, horizonDays: number): boolean {
+  const limit = Date.now() + horizonDays * 24 * 60 * 60 * 1000;
+  return instant.getTime() <= limit;
+}

@@ -12,6 +12,14 @@
 export const CLUB_NAME = process.env.NEXT_PUBLIC_CLUB_NAME || "Luki Padel";
 export const CLUB_ADDRESS = process.env.NEXT_PUBLIC_CLUB_ADDRESS || "Tbilisi";
 
+/**
+ * The number the club answers. Deliberately empty by default: a page that
+ * shows an invented phone number is worse than one that says "get in touch",
+ * because someone will dial it. Set NEXT_PUBLIC_CLUB_PHONE and the "book
+ * further ahead" notice becomes a tap-to-call link.
+ */
+export const CLUB_PHONE = process.env.NEXT_PUBLIC_CLUB_PHONE || "";
+
 /** "<page> — Luki Padel", so every tab title is built the same way. */
 export function pageTitle(page: string): string {
   return `${page} — ${CLUB_NAME}`;

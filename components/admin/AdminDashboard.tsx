@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CourtMap, type CourtMapBooking } from "@/components/courts/CourtMap";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -17,7 +18,8 @@ import {
   Legend,
 } from "recharts";
 import { format } from "date-fns";
-import { Send, Download, Lock, Loader2 } from "lucide-react";
+import { Send, Download, Lock, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { addDays, parseISO } from "date-fns";
 import { formatMoney } from "@/lib/pricing";
 
 type DailySummary = {
@@ -56,6 +58,7 @@ export function AdminDashboard({
   courts,
   gridBookings,
   dateLabel,
+  isToday,
 }: {
   adminName: string;
   dailySummaries: DailySummary[];
@@ -64,7 +67,9 @@ export function AdminDashboard({
   courts: { id: number; name: string; indoor: boolean }[];
   gridBookings: CourtMapBooking[];
   dateLabel: string;
+  isToday: boolean;
 }) {
+  const router = useRouter();
   const [sendingReport, setSendingReport] = useState(false);
   const [reportMsg, setReportMsg] = useState<string | null>(null);
 
@@ -82,6 +87,15 @@ export function AdminDashboard({
   }));
 
   const todayTotal = dailySummaries[dailySummaries.length - 1]?.total_revenue_cents ?? 0;
+
+  /** Step the court map a day at a time, staying on the club's calendar. */
+  function goToDay(delta: number) {
+    const next = addDays(parseISO(dateLabel), delta);
+    const key = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(
+      next.getDate()
+    ).padStart(2, "0")}`;
+    router.push(`/admin?date=${key}`);
+  }
 
   async function sendReportNow() {
     setSendingReport(true);
@@ -204,14 +218,64 @@ export function AdminDashboard({
       </div>
 
       <div className="mb-6">
-        <CourtMap title="Court map" courts={courts} bookings={gridBookings} dateLabel={dateLabel} />
+        <div>
+          {/* Any day, not just this one. "Is the 24th busy?" is asked at the
+              counter constantly, and the answer used to require the database. */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-label="Previous day"
+              onClick={() => goToDay(-1)}
+              className="rounded-court border border-line bg-surface-base p-1.5 text-ink-muted hover:text-ink"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <input
+              type="date"
+              value={dateLabel}
+              onChange={(e) => e.target.value && router.push(`/admin?date=${e.target.value}`)}
+              className="rounded-court border border-line bg-surface-base px-3 py-1.5 text-sm text-ink"
+            />
+            <button
+              type="button"
+              aria-label="Next day"
+              onClick={() => goToDay(1)}
+              className="rounded-court border border-line bg-surface-base p-1.5 text-ink-muted hover:text-ink"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            {!isToday && (
+              <button
+                type="button"
+                onClick={() => router.push("/admin")}
+                className="rounded-court border border-line bg-surface-base px-3 py-1.5 text-sm font-medium text-brand"
+              >
+                Back to today
+              </button>
+            )}
+            <Link
+              href="/admin/new-booking"
+              className="ml-auto rounded-court bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-hover"
+            >
+              New booking
+            </Link>
+          </div>
+          <CourtMap
+            title={isToday ? "Court map — today" : "Court map"}
+            courts={courts}
+            bookings={gridBookings}
+            dateLabel={dateLabel}
+          />
+        </div>
       </div>
 
       {/* Today's grid + car wash queue */}
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="rounded-court border border-line bg-surface-base shadow-card p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-heading text-lg font-bold text-ink">Today's courts</h2>
+            <h2 className="font-heading text-lg font-bold text-ink">
+              {isToday ? "Today's courts" : `Courts — ${dateLabel}`}
+            </h2>
             <button className="flex items-center gap-1.5 text-xs text-ink-muted/80 hover:text-ink">
               <Lock className="h-3.5 w-3.5" /> Lock a court
             </button>
@@ -236,7 +300,9 @@ export function AdminDashboard({
         </div>
 
         <div className="rounded-court border border-line bg-surface-base shadow-card p-6">
-          <h2 className="mb-4 font-heading text-lg font-bold text-ink">Car wash queue</h2>
+          <h2 className="mb-4 font-heading text-lg font-bold text-ink">
+            {isToday ? "Car wash queue" : `Car wash — ${dateLabel}`}
+          </h2>
           <div className="space-y-2">
             {carWashBookingsToday.length === 0 && (
               <p className="text-sm text-ink-muted/70">No car wash cycles yet today.</p>

@@ -14,10 +14,13 @@ import {
   clubDayOfWeek,
   clubHHMM,
   clubWallTimeToInstant,
+  PUBLIC_HORIZON_DAYS,
 } from "@/lib/time/club";
 import type { WashRecommendationResult, WashSuggestion } from "@/lib/carwash/suggest";
 import { CourtMap, type CourtMapBooking } from "@/components/courts/CourtMap";
 import { useGuestIdentity } from "@/lib/hooks/useGuestIdentity";
+import { MonthPicker } from "@/components/booking/MonthPicker";
+import { CLUB_PHONE } from "@/lib/club";
 
 type CourtRow = { id: number; name: string; indoor: boolean };
 type BookedSlot = { court_id: number; slot: string; status: string };
@@ -67,7 +70,19 @@ type PeriodId = (typeof PERIODS)[number]["id"];
 
 type Step = "slot" | "extras" | "checkout" | "success";
 
-export function CourtBookingFlow() {
+/**
+ * `horizonDays` is how far ahead this caller may book. The public gets a week
+ * as a row of day chips; the desk gets a month as a calendar, because a caller
+ * says "the 24th" and nobody wants to count chips. The server enforces the same
+ * limit — this only decides what is offered.
+ */
+export function CourtBookingFlow({
+  horizonDays = PUBLIC_HORIZON_DAYS,
+  staffMode = false,
+}: {
+  horizonDays?: number;
+  staffMode?: boolean;
+} = {}) {
   const [date, setDate] = useState(new Date());
   const [selectedCourt, setSelectedCourt] = useState<number | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -91,7 +106,7 @@ export function CourtBookingFlow() {
   const [equipment, setEquipment] = useState<Record<number, number>>({});
   // Checkout fills itself: the account's email, and whatever name and phone
   // this person last gave us. See lib/hooks/useGuestIdentity.
-  const { guest, setGuest, remember, signedIn } = useGuestIdentity();
+  const { guest, setGuest, remember, signedIn } = useGuestIdentity({ enabled: !staffMode });
   // Nothing is charged online yet, so every booking is recorded as settled on
   // site. Restore a real selector when a payment provider is wired up.
   const paymentMethod = "cash" as const;
@@ -107,8 +122,16 @@ export function CourtBookingFlow() {
   // the customer now picks which one (or none), so this holds the choice itself.
   const [chosenWash, setChosenWash] = useState<WashSuggestion | null>(null);
   const [washAdded, setWashAdded] = useState(false); // reflected in the success screen
+  const [washMissed, setWashMissed] = useState(false); // wanted a wash, lost the bay
 
-  const next7Days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(new Date(), i)), []);
+  const dayChips = useMemo(
+    () => Array.from({ length: horizonDays }, (_, i) => addDays(new Date(), i)),
+    [horizonDays]
+  );
+  const lastBookableDay = useMemo(
+    () => addDays(new Date(), horizonDays - 1),
+    [horizonDays]
+  );
 
   // A failed availability fetch used to fall back to an empty `booked` list,
   // which renders every slot as free — the customer picks an already-taken
@@ -352,6 +375,10 @@ export function CourtBookingFlow() {
       if (!res.ok) {
         if (data.error === "SLOT_TAKEN") {
           setError("That slot was just taken by someone else — please pick another time.");
+        } else if (data.error === "BEYOND_BOOKING_HORIZON") {
+          setError(
+            `We only take online bookings ${data.horizonDays} days ahead. Get in touch and we'll arrange a date further out.`
+          );
         } else {
           setError("Something went wrong. Please try again.");
         }
@@ -387,9 +414,16 @@ export function CourtBookingFlow() {
               linkedCourtBookingId: data.booking.id,
             }),
           });
-          if (washRes.ok) setWashAdded(true);
+          if (washRes.ok) {
+            setWashAdded(true);
+          } else {
+            // The bay was free when the panel loaded and is not now. The court
+            // booking stands either way, but saying nothing would leave someone
+            // handing over car keys at a bay that isn't expecting them.
+            setWashMissed(true);
+          }
         } catch {
-          // Court booking already succeeded — silently skip the wash add-on rather than alarming the customer.
+          setWashMissed(true);
         }
       }
 
@@ -407,6 +441,7 @@ export function CourtBookingFlow() {
         bookingCode={bookingCode}
         email={guest.email}
         washAdded={washAdded}
+        washMissed={washMissed}
         emailSent={emailSent}
       />
     );
@@ -417,24 +452,51 @@ export function CourtBookingFlow() {
       <h1 className="font-heading text-3xl font-extrabold uppercase tracking-tight text-ink md:text-4xl">Book a court</h1>
       <p className="mt-2 text-ink-muted">Pick a day and a time — we&apos;ll show you which courts are free.</p>
 
-      {/* Date strip */}
-      <div className="mt-8 flex gap-2 overflow-x-auto pb-2">
-        {next7Days.map((d) => (
-          <button
-            key={d.toISOString()}
-            onClick={() => setDate(d)}
-            className={cn(
-              "flex min-w-[64px] flex-col items-center rounded-court border px-3 py-2.5 transition-colors",
-              isSameDay(d, date)
-                ? "border-brand bg-brand-accent/10 text-brand"
-                : "border-line text-ink-muted hover:border-ink-muted/30"
-            )}
-          >
-            <span className="text-xs">{format(d, "EEE")}</span>
-            <span className="text-lg font-bold">{format(d, "d")}</span>
-          </button>
-        ))}
-      </div>
+      {/* Which day. A week of chips for the public, a calendar for the desk. */}
+      {staffMode ? (
+        <div className="mt-8 max-w-sm">
+          <MonthPicker value={date} onChange={setDate} maxDate={lastBookableDay} />
+        </div>
+      ) : (
+        <>
+          <div className="mt-8 flex gap-2 overflow-x-auto pb-2">
+            {dayChips.map((d) => (
+              <button
+                key={d.toISOString()}
+                onClick={() => setDate(d)}
+                className={cn(
+                  "flex min-w-[64px] flex-col items-center rounded-court border px-3 py-2.5 transition-colors",
+                  isSameDay(d, date)
+                    ? "border-brand bg-brand-accent/10 text-brand"
+                    : "border-line text-ink-muted hover:border-ink-muted/30"
+                )}
+              >
+                <span className="text-xs">{format(d, "EEE")}</span>
+                <span className="text-lg font-bold">{format(d, "d")}</span>
+              </button>
+            ))}
+          </div>
+
+          {/*
+            Say where the window ends and what to do about it. Without this the
+            strip simply stops at seven days and the customer is left to guess
+            whether the club is closed, full, or not taking bookings.
+          */}
+          <p className="mt-2 text-xs text-ink-muted">
+            Online booking runs {horizonDays} days ahead. For a court further out,{" "}
+            {CLUB_PHONE ? (
+              <a href={`tel:${CLUB_PHONE.replace(/\s/g, "")}`} className="font-semibold text-brand">
+                call us on {CLUB_PHONE}
+              </a>
+            ) : (
+              <a href="/directions" className="font-semibold text-brand">
+                get in touch
+              </a>
+            )}{" "}
+            and we&apos;ll arrange it.
+          </p>
+        </>
+      )}
 
       {/* Duration toggle */}
       <div className="mt-6 flex items-center gap-3">
@@ -899,11 +961,13 @@ function SuccessPanel({
   bookingCode,
   email,
   washAdded,
+  washMissed,
   emailSent,
 }: {
   bookingCode: string;
   email: string;
   washAdded: boolean;
+  washMissed: boolean;
   emailSent: boolean;
 }) {
   return (
@@ -935,15 +999,25 @@ function SuccessPanel({
           Your car wash is booked too — drop your keys at the bay before you head to the court.
         </p>
       )}
+      {washMissed && (
+        <p className="mt-4 flex items-center gap-2 rounded-court border border-peak/40 bg-peak/10 px-4 py-2.5 text-sm text-ink">
+          <AlertCircle className="h-4 w-4 shrink-0 text-peak" />
+          Your court is booked, but the wash bay was taken while you were checking
+          out — nothing was charged for it. Ask at the desk when you arrive.
+        </p>
+      )}
     </div>
   );
 }
 
 /**
- * Renders the cross-sell panel driven entirely by the recommendation engine's
- * output. The copy is deliberately different per tier so the customer always
- * understands *why* they're seeing what they're seeing — a vague "car wash
- * available?" toggle would undersell (or oversell) what's actually possible.
+ * The cross-sell panel, driven entirely by the recommendation engine.
+ *
+ * Only a wash that actually lines up with the match may be added here. A slot
+ * three hours after the customer has driven home is not an add-on, it is a
+ * separate errand — offering it as a tick-box is how someone ends up paying for
+ * a wash they cannot collect. When nothing fits, the panel says so plainly
+ * rather than going quiet.
  */
 function WashCrossSell({
   loading,
@@ -964,15 +1038,50 @@ function WashCrossSell({
     );
   }
 
-  if (!result || result.perService.length === 0) {
+  const all = result?.perService ?? [];
+  const bookable = all.filter((o) => o.tier !== "court_only");
+  const nearest = all.find((o) => o.tier === "court_only");
+
+  if (all.length === 0) {
     return (
-      <p className="flex items-center gap-2 text-sm text-ink-muted">
-        <Droplets className="h-4 w-4" /> Car wash is fully booked for the rest of today.
-      </p>
+      <div className="rounded-court border border-line bg-surface-muted p-4">
+        <p className="flex items-center gap-2 text-sm font-medium text-ink">
+          <Droplets className="h-4 w-4 text-ink-muted" /> Car wash is fully booked today
+        </p>
+        <p className="mt-1 text-xs text-ink-muted">
+          Every bay is taken for the rest of the day, so a wash can&apos;t be added to
+          this booking. Your court is unaffected.
+        </p>
+      </div>
     );
   }
 
-  const anyFitsTheMatch = result.perService.some((o) => o.tier !== "court_only");
+  if (bookable.length === 0) {
+    return (
+      <div className="rounded-court border border-line bg-surface-muted p-4">
+        <p className="flex items-center gap-2 text-sm font-medium text-ink">
+          <Droplets className="h-4 w-4 text-ink-muted" /> No wash bay is free during your
+          match
+        </p>
+        <p className="mt-1 text-xs text-ink-muted">
+          All four bays are busy while you&apos;re playing, so a wash can&apos;t be added
+          to this booking.
+        </p>
+        {nearest && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-muted">
+            <Clock className="h-3.5 w-3.5" />
+            Nearest free slot: Bay {nearest.bayId}, {nearest.service.label},{" "}
+            {format(nearest.start, "HH:mm")}–{format(nearest.end, "HH:mm")}
+          </p>
+        )}
+        <a href="/car-wash" className="mt-2 inline-block text-xs font-semibold text-brand">
+          Book a wash separately →
+        </a>
+      </div>
+    );
+  }
+
+  const notFitting = all.filter((o) => o.tier === "court_only");
 
   return (
     <div>
@@ -981,15 +1090,12 @@ function WashCrossSell({
         Wash your car while you play?
       </p>
       <p className="mt-1 text-xs text-ink-muted">
-        {anyFitsTheMatch
-          ? "Drop your keys at the bay — every wash we offer, with the earliest bay free for each."
-          : "Nothing lines up with your match today, but these are the next open slots."}
+        Drop your keys at the bay — these are the washes that fit around your match.
       </p>
 
       <div className="mt-3 space-y-2">
-        {result.perService.map((option) => {
+        {bookable.map((option) => {
           const picked = chosen?.service.id === option.service.id;
-          const fits = option.tier !== "court_only";
           return (
             <label
               key={option.service.id}
@@ -1022,18 +1128,21 @@ function WashCrossSell({
                 </p>
                 {/* The engine's own words for why this slot is what it is —
                     "ready 10 min before you finish" is worth more than a badge. */}
-                <p
-                  className={cn(
-                    "mt-0.5 text-xs font-medium",
-                    fits ? "text-brand-accent" : "text-ink-muted"
-                  )}
-                >
-                  {option.note}
-                </p>
+                <p className="mt-0.5 text-xs font-medium text-brand-accent">{option.note}</p>
               </div>
             </label>
           );
         })}
+
+        {/* A service whose only free bay falls outside the match still gets
+            named, so "where's the full detail?" has an answer on the page. */}
+        {notFitting.length > 0 && (
+          <p className="px-1 text-[11px] text-ink-muted">
+            {notFitting.map((o) => o.service.label).join(", ")}{" "}
+            {notFitting.length === 1 ? "has" : "have"} no bay free during your match —
+            book separately if you want one.
+          </p>
+        )}
 
         <button
           type="button"

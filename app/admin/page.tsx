@@ -7,7 +7,12 @@ import { clubDateKey, clubDayBounds } from "@/lib/time/club";
 export const metadata = { title: pageTitle("Admin Dashboard") };
 export const dynamic = "force-dynamic";
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  const { date: requestedDate } = await searchParams;
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -48,7 +53,14 @@ export default async function AdminPage() {
   // with `malformed range literal`, which silently emptied both lists here the
   // same way it broke /book. Bounds are the club's calendar day, not UTC's.
   const today = clubDateKey(new Date());
-  const { start: dayStart, end: dayEnd } = clubDayBounds(today);
+  // The desk needs any day, not just this one — "is the 24th busy?" is asked at
+  // the counter constantly. The date comes in as a club-local YYYY-MM-DD; a
+  // malformed one falls back to today rather than throwing a 500 at whoever
+  // edited the URL.
+  const viewDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate ?? "")
+    ? (requestedDate as string)
+    : today;
+  const { start: dayStart, end: dayEnd } = clubDayBounds(viewDate);
   const dayRange = `[${dayStart.toISOString()},${dayEnd.toISOString()})`;
 
   const { data: todaysCourtBookings } = await supabase
@@ -98,7 +110,8 @@ export default async function AdminPage() {
     <AdminDashboard
       courts={(courtList ?? []) as any}
       gridBookings={gridBookings}
-      dateLabel={today}
+      dateLabel={viewDate}
+      isToday={viewDate === today}
       adminName={profile.full_name ?? "Admin"}
       dailySummaries={summaries}
       courtBookingsToday={todaysCourtBookings ?? []}

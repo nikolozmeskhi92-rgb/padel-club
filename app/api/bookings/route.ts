@@ -4,7 +4,15 @@ import { createServerSupabase, createServiceRoleClient } from "@/lib/supabase/se
 import { resolvePrice } from "@/lib/pricing";
 import { sendBookingConfirmationEmail } from "@/lib/email/send";
 import { enforceRateLimit } from "@/lib/rate-limit";
-import { clubDayBounds, clubDateKey, isWithinOpeningHours } from "@/lib/time/club";
+import {
+  clubDayBounds,
+  clubDateKey,
+  isWithinOpeningHours,
+  isWithinBookingHorizon,
+  PUBLIC_HORIZON_DAYS,
+  STAFF_HORIZON_DAYS,
+} from "@/lib/time/club";
+import { getStaffUser } from "@/lib/auth/staff";
 
 const BookingSchema = z.object({
   courtId: z.number().int().min(1).max(10),
@@ -77,6 +85,19 @@ export async function POST(req: NextRequest) {
   // accepted and ran half an hour past closing.
   if (!isWithinOpeningHours(start, durationMinutes)) {
     return NextResponse.json({ error: "OUTSIDE_OPENING_HOURS" }, { status: 400 });
+  }
+
+  // How far ahead this caller may book. The public gets a week; the desk gets a
+  // month, because the calls it takes are exactly the ones the public window
+  // turns away. Enforced here and not only in the date picker: the picker is a
+  // convenience, this is the rule.
+  const staff = await getStaffUser();
+  const horizonDays = staff ? STAFF_HORIZON_DAYS : PUBLIC_HORIZON_DAYS;
+  if (!isWithinBookingHorizon(start, horizonDays)) {
+    return NextResponse.json(
+      { error: "BEYOND_BOOKING_HORIZON", horizonDays },
+      { status: 400 }
+    );
   }
 
   // --- Authoritative server-side price resolution (never trust client-sent prices) ---

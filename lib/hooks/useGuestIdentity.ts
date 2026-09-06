@@ -21,12 +21,19 @@ const STORAGE_KEY = "luki:guest-details";
  * `remember` is called after a booking succeeds rather than on every keystroke,
  * so a half-typed number never becomes the default for next time.
  */
-export function useGuestIdentity() {
+export function useGuestIdentity({ enabled = true }: { enabled?: boolean } = {}) {
   const [guest, setGuest] = useState<GuestIdentity>({ name: "", email: "", phone: "" });
   const [signedIn, setSignedIn] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    // Disabled at the desk: staff are booking for a caller, and prefilling the
+    // staff member's own email would quietly send the caller's confirmation and
+    // cancellation link to the club instead of to them.
+    if (!enabled) {
+      setReady(true);
+      return;
+    }
     let cancelled = false;
 
     let stored: Partial<GuestIdentity> = {};
@@ -69,10 +76,11 @@ export function useGuestIdentity() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [enabled]);
 
   const remember = useCallback(
     (details: GuestIdentity) => {
+      if (!enabled) return;
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(details));
       } catch {
@@ -87,7 +95,7 @@ export function useGuestIdentity() {
         /* remembering is a convenience; never fail a completed booking over it */
       });
     },
-    [signedIn]
+    [signedIn, enabled]
   );
 
   return { guest, setGuest, remember, signedIn, ready };
