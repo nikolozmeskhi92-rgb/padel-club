@@ -993,6 +993,16 @@ function SuccessPanel({
       <p className="mt-3 rounded-court bg-surface-muted px-4 py-2.5 text-sm text-ink-muted">
         Pay at the club when you arrive.
       </p>
+      {/* This screen is the only copy of the code for a guest who isn't signed
+          in, and it disappears the moment they close the tab. Tell them how to
+          get it back before they need to. */}
+      <p className="mt-3 text-xs text-ink-muted">
+        Lost it later?{" "}
+        <a href="/find" className="font-semibold text-brand">
+          Find your booking
+        </a>{" "}
+        with this code and your email.
+      </p>
       {washAdded && (
         <p className="mt-4 flex items-center gap-2 rounded-court border border-line bg-brand-accent/5 px-4 py-2.5 text-sm text-ink">
           <Droplets className="h-4 w-4 text-brand-accent" />
