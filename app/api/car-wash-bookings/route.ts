@@ -102,14 +102,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "BOOKING_FAILED" }, { status: 500 });
   }
 
-  if (paymentMethod === "cash") {
-    await supabase.rpc("confirm_booking", {
-      p_booking_type: "car_wash",
-      p_booking_id: booking.id,
-      p_payment_method: paymentMethod,
-      p_provider_ref: null,
-    });
-  }
+  // Same as the court route: hold the bay, but don't claim the money is in.
+  await supabase
+    .from("wash_bookings")
+    .update({ status: "confirmed" })
+    .eq("id", booking.id);
 
   const { data: policy } = await supabase
     .from("cancellation_policy")
@@ -117,7 +114,7 @@ export async function POST(req: NextRequest) {
     .eq("id", 1)
     .maybeSingle();
 
-  sendBookingConfirmationEmail({
+  const emailSent = await sendBookingConfirmationEmail({
     type: "car_wash",
     to: guestEmail,
     guestName,
@@ -126,12 +123,19 @@ export async function POST(req: NextRequest) {
     date: start,
     durationMinutes,
     priceCents: matchedRule.price_cents,
-    paymentStatus: paymentMethod === "cash" ? "paid" : "unpaid",
+    paymentStatus: "unpaid",
     cancelToken: booking.cancel_token,
     freeCancellationHours: policy?.free_cancellation_hours ?? 24,
-  }).catch((e) => console.error("Email send failed:", e));
+  }).catch((e) => {
+    // The booking is already committed; a failed email must not undo it.
+    console.error("Email send failed:", e);
+    return false;
+  });
 
-  return NextResponse.json({ booking }, { status: 201 });
+  return NextResponse.json(
+    { booking, emailSent },
+    { status: 201 }
+  );
 }
 
 /**

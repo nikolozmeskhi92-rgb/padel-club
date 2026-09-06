@@ -94,6 +94,7 @@ export function CourtBookingFlow() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bookingCode, setBookingCode] = useState<string | null>(null);
+  const [emailSent, setEmailSent] = useState(false);
 
   // --- Car wash cross-sell ---
   const [washResult, setWashResult] = useState<WashRecommendationResult | null>(null);
@@ -311,6 +312,7 @@ export function CourtBookingFlow() {
         return;
       }
       setBookingCode(data.booking.booking_code);
+      setEmailSent(Boolean(data.emailSent));
 
       // Cross-sell: if the customer opted into the recommended wash slot,
       // book it now, linked to the court booking that just succeeded.
@@ -347,7 +349,14 @@ export function CourtBookingFlow() {
   }
 
   if (step === "success" && bookingCode) {
-    return <SuccessPanel bookingCode={bookingCode} email={guest.email} washAdded={washAdded} />;
+    return (
+      <SuccessPanel
+        bookingCode={bookingCode}
+        email={guest.email}
+        washAdded={washAdded}
+        emailSent={emailSent}
+      />
+    );
   }
 
   return (
@@ -621,7 +630,7 @@ export function CourtBookingFlow() {
                     className="mt-6 flex w-full items-center justify-center gap-2 rounded-court bg-brand py-3 text-sm font-semibold text-white disabled:opacity-50"
                   >
                     {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Confirm & pay {formatMoney(price)}
+                    Reserve · {formatMoney(price)}
                   </button>
                   <p className="mt-2 text-center text-[11px] text-ink-muted/70">
                     Sandbox mode — no real charge will be made.
@@ -794,10 +803,12 @@ function SuccessPanel({
   bookingCode,
   email,
   washAdded,
+  emailSent,
 }: {
   bookingCode: string;
   email: string;
   washAdded: boolean;
+  emailSent: boolean;
 }) {
   return (
     <div className="mx-auto flex max-w-md flex-col items-center px-6 py-24 text-center">
@@ -805,9 +816,22 @@ function SuccessPanel({
         <Check className="h-8 w-8 text-brand-accent" />
       </div>
       <h1 className="mt-6 font-heading text-2xl font-extrabold text-ink">Booking confirmed</h1>
+      {/*
+        This used to promise the email unconditionally. With no RESEND_API_KEY
+        nothing is sent, so the customer was told to check an inbox that would
+        stay empty — and the booking code on this screen is the only copy they
+        have. Say which of the two actually happened.
+      */}
       <p className="mt-2 text-ink-muted">
-        Code <span className="font-mono text-brand">{bookingCode}</span> — a confirmation with your QR
-        check-in code was sent to {email}.
+        Code <span className="font-mono text-brand">{bookingCode}</span>
+        {emailSent ? (
+          <> — a confirmation with your QR check-in code was sent to {email}.</>
+        ) : (
+          <> — write this down, it is what you check in with.</>
+        )}
+      </p>
+      <p className="mt-3 rounded-court bg-surface-muted px-4 py-2.5 text-sm text-ink-muted">
+        Pay at the club when you arrive.
       </p>
       {washAdded && (
         <p className="mt-4 flex items-center gap-2 rounded-court border border-line bg-brand-accent/5 px-4 py-2.5 text-sm text-ink">

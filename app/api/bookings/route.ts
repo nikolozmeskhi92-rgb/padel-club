@@ -130,16 +130,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "BOOKING_FAILED" }, { status: 500 });
   }
 
-  // Booking created as 'pending'. In production this confirms after the payment
-  // provider webhook fires; cash/on-site payment methods can confirm immediately.
-  if (paymentMethod === "cash") {
-    await supabase.rpc("confirm_booking", {
-      p_booking_type: "court",
-      p_booking_id: booking.id,
-      p_payment_method: paymentMethod,
-      p_provider_ref: null,
-    });
-  }
+  // Pay-on-site: confirm the booking so the slot is held, but do NOT mark it
+  // paid — nothing has been collected yet. `confirm_booking()` sets status and
+  // payment_status together and writes a `paid` payments row, which told staff
+  // the money was already in and showed the customer "Payment: Paid" on their
+  // check-in page before they had paid a lari. Call that RPC from a real
+  // payment webhook, or from the admin when cash is taken at the desk.
+  await supabase
+    .from("court_bookings")
+    .update({ status: "confirmed" })
+    .eq("id", booking.id);
 
   // Fire-and-forget confirmation email — booking succeeds even if email fails.
   const { data: policy } = await supabase
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
     .eq("id", 1)
     .maybeSingle();
 
-  sendBookingConfirmationEmail({
+  const emailSent = await sendBookingConfirmationEmail({
     type: "court",
     to: guestEmail,
     guestName,
@@ -157,12 +157,21 @@ export async function POST(req: NextRequest) {
     date: start,
     durationMinutes,
     priceCents: totalCents,
-    paymentStatus: paymentMethod === "cash" ? "paid" : "unpaid",
+    paymentStatus: "unpaid",
     cancelToken: booking.cancel_token,
     freeCancellationHours: policy?.free_cancellation_hours ?? 24,
-  }).catch((e) => console.error("Email send failed:", e));
+  }).catch((e) => {
+    // The booking is already committed; a failed email must not undo it.
+    console.error("Email send failed:", e);
+    return false;
+  });
 
-  return NextResponse.json({ booking }, { status: 201 });
+  // The UI used to promise "a confirmation was sent to <email>" unconditionally.
+  // Without RESEND_API_KEY nothing is sent, so say which actually happened.
+  return NextResponse.json(
+    { booking, emailSent },
+    { status: 201 }
+  );
 }
 
 export async function GET(req: NextRequest) {

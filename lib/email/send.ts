@@ -30,7 +30,15 @@ type SendConfirmationArgs = {
   freeCancellationHours?: number;         // from cancellation_policy
 };
 
-export async function sendBookingConfirmationEmail(args: SendConfirmationArgs) {
+/**
+ * Returns true only when Resend accepted the message. The caller uses this to
+ * decide what to tell the customer — the success screen used to promise an
+ * email unconditionally, which was a lie on any deployment without a working
+ * key, and the booking code on that screen is their only copy.
+ */
+export async function sendBookingConfirmationEmail(
+  args: SendConfirmationArgs
+): Promise<boolean> {
   const {
     to,
     guestName,
@@ -49,7 +57,7 @@ export async function sendBookingConfirmationEmail(args: SendConfirmationArgs) {
     console.warn(
       `[email] RESEND_API_KEY not set — skipping confirmation for booking ${bookingCode}`
     );
-    return;
+    return false;
   }
 
   const endTime = new Date(date.getTime() + durationMinutes * 60_000);
@@ -87,6 +95,8 @@ export async function sendBookingConfirmationEmail(args: SendConfirmationArgs) {
   });
 
   if (error) {
-    throw new Error(`Resend error: ${error.message}`);
+    console.error(`[email] Resend refused booking ${bookingCode}: ${error.message}`);
+    return false;
   }
+  return true;
 }
