@@ -9,10 +9,23 @@ import { formatMoney } from "@/lib/currency";
 // `next build` (page-data collection) on any machine without the key set.
 let resendClient: Resend | null = null;
 
+/**
+ * Whether a *usable* key is set.
+ *
+ * "Is it set?" is not the question: .env.local ships with the placeholder
+ * `re_xxxxxxxxxxxx`, which is a perfectly non-empty string. Treating that as
+ * configured made every failure look like the provider rejecting us, when the
+ * truth was that nobody had signed up yet — and it is the same trap that once
+ * had this site telling customers a confirmation had been sent.
+ */
+export function isEmailConfigured(): boolean {
+  const key = process.env.RESEND_API_KEY ?? "";
+  return key.startsWith("re_") && key.length > 20 && !/^re_x+$/i.test(key);
+}
+
 export function getResend(): Resend | null {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) return null;
-  if (!resendClient) resendClient = new Resend(apiKey);
+  if (!isEmailConfigured()) return null;
+  if (!resendClient) resendClient = new Resend(process.env.RESEND_API_KEY!);
   return resendClient;
 }
 

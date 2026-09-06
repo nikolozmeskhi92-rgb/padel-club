@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Mail, Trash2, AlertCircle } from "lucide-react";
+import { Loader2, Mail, Trash2, AlertCircle, Send } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 type Recipient = {
@@ -30,6 +30,8 @@ export function NotificationRecipients({ emailConfigured }: { emailConfigured: b
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -99,6 +101,38 @@ export function NotificationRecipients({ emailConfigured }: { emailConfigured: b
     load();
   }
 
+  /**
+   * Prove the whole chain before relying on it. A wrong key, an unverified
+   * domain, a refused from-address — each fails silently and each used to be
+   * discoverable only by making a real booking and hoping.
+   */
+  async function sendTest() {
+    setTesting(true);
+    setTestResult(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/notifications/test", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError("Couldn't send the test.");
+        return;
+      }
+      setTestResult(
+        data.sent > 0
+          ? `Sent to ${data.sent} address${data.sent === 1 ? "" : "es"} — check the inbox (and spam).`
+          : data.skipped === "NO_RECIPIENTS"
+            ? "Nobody is on the list yet, so there was nowhere to send it."
+            : data.skipped === "NO_API_KEY"
+              ? "No email provider is configured, so nothing was sent."
+              : "The provider refused it. Check the API key and the from-address."
+      );
+    } catch {
+      setError("Network error — try again.");
+    } finally {
+      setTesting(false);
+    }
+  }
+
   const activeCount = (rows ?? []).filter((r) => r.active).length;
 
   return (
@@ -156,6 +190,18 @@ export function NotificationRecipients({ emailConfigured }: { emailConfigured: b
           {error}
         </p>
       )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+        <button
+          onClick={sendTest}
+          disabled={testing}
+          className="flex items-center gap-2 rounded-court border border-line px-4 py-2 text-sm font-medium text-ink-muted hover:border-brand hover:text-brand disabled:opacity-50"
+        >
+          {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          Send a test alert
+        </button>
+        {testResult && <p className="text-xs text-ink-muted">{testResult}</p>}
+      </div>
 
       <div className="mt-5">
         {rows === null ? (

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { pageTitle } from "@/lib/club";
 import { requireStaff } from "@/lib/auth/staff";
+import { isEmailConfigured } from "@/lib/email/send";
 import { NotificationRecipients } from "@/components/admin/NotificationRecipients";
 
 export const metadata = { title: pageTitle("Booking Alerts") };
@@ -11,13 +12,9 @@ export default async function AdminNotificationsPage() {
 
   // Whether an email would actually go out is a server-side fact; the panel
   // says so rather than letting a full-looking list imply it is working.
-  // A placeholder key is a non-empty string, so "is it set?" is not the
-  // question — .env.local ships with `re_xxxxxxxxxxxx` and checking only for
-  // presence is exactly how the site once told customers an email had been sent
-  // when none had.
-  const key = process.env.RESEND_API_KEY ?? "";
-  const emailConfigured =
-    key.startsWith("re_") && key.length > 20 && !/^re_x+$/i.test(key);
+  // One definition of "configured", shared with the code that actually sends,
+  // so the panel can never say one thing while the sender does another.
+  const emailConfigured = isEmailConfigured();
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
