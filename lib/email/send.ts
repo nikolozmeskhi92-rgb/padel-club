@@ -1,5 +1,4 @@
 import { Resend } from "resend";
-import QRCode from "qrcode";
 import { format } from "date-fns";
 import BookingConfirmation from "@/emails/BookingConfirmation";
 import { formatMoney } from "@/lib/currency";
@@ -78,11 +77,9 @@ export async function sendBookingConfirmationEmail(
   const clubName = process.env.NEXT_PUBLIC_CLUB_NAME || "Padel Club";
   const clubAddress = process.env.NEXT_PUBLIC_CLUB_ADDRESS || "";
 
-  // QR encodes a check-in URL staff can scan at reception
-  const qrDataUrl = await QRCode.toDataURL(`${siteUrl}/checkin/${bookingCode}`, {
-    margin: 1,
-    color: { dark: "#001A33", light: "#FFFFFF" },
-  });
+  // No QR: reception looks a booking up by name, phone or code, and an image
+  // in an email is the part most likely to be blocked, stripped, or simply not
+  // loaded on the phone the customer is holding at the desk.
 
   const priceLabel = formatMoney(priceCents);
 
@@ -98,7 +95,6 @@ export async function sendBookingConfirmationEmail(
       timeLabel: `${format(date, "HH:mm")} – ${format(endTime, "HH:mm")}`,
       priceLabel,
       paymentStatus,
-      qrDataUrl,
       clubName,
       clubAddress,
       siteUrl,

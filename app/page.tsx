@@ -91,7 +91,7 @@ export default function HomePage() {
           {/* Prices are the first thing a new visitor looks for; giving the
               cheapest real rate here saves them a trip into the booking grid. */}
           <p className="mt-8 text-sm text-white/65">
-            From {formatMoney(2500)} an hour off-peak · {formatMoney(800)} car wash
+            From {formatMoney(6000)} an hour off-peak · {formatMoney(800)} car wash
           </p>
         </div>
       </section>

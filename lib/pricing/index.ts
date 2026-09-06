@@ -84,7 +84,10 @@ export function isPeakHour(d: Date): boolean {
   const day = clubDayOfWeek(d);
   const hour = clubHour(d);
   const isWeekend = day === 0 || day === 6;
-  return isWeekend || (hour >= 18 && hour < 23);
+  // The club's peak: weekday evenings from 19:00, and weekends from noon —
+  // both running to close. Keep in step with the pricing_rules windows in
+  // migration 0012; this badge only labels what those rules charge.
+  return isWeekend ? hour >= 12 : hour >= 19;
 }
 
 /** Re-exported so callers that price things also have the zone they priced in. */

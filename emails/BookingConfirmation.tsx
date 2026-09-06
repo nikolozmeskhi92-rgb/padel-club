@@ -6,7 +6,6 @@ import {
   Head,
   Heading,
   Html,
-  Img,
   Preview,
   Row,
   Section,
@@ -23,7 +22,6 @@ type Props = {
   timeLabel: string; // "18:00 – 19:00"
   priceLabel: string; // "$40.00"
   paymentStatus: "paid" | "unpaid";
-  qrDataUrl: string; // base64 PNG data URL
   clubName: string;
   clubAddress: string;
   siteUrl: string;
@@ -39,7 +37,6 @@ export default function BookingConfirmation({
   timeLabel = "18:00 – 19:00",
   priceLabel = "$40.00",
   paymentStatus = "paid",
-  qrDataUrl = "",
   clubName = CLUB_NAME,
   clubAddress = "12 Court Lane, Tbilisi",
   siteUrl = "https://example.com",
@@ -84,14 +81,6 @@ export default function BookingConfirmation({
               </Column>
             </Row>
 
-            {qrDataUrl && (
-              <Section style={{ textAlign: "center", padding: "20px 0" }}>
-                <Img src={qrDataUrl} width="140" height="140" alt="Booking QR code" style={qrImg} />
-                <Text style={{ ...label, textAlign: "center" }}>
-                  Show this at check-in
-                </Text>
-              </Section>
-            )}
           </Section>
 
           <Section style={{ padding: "24px 4px" }}>
@@ -120,8 +109,8 @@ export default function BookingConfirmation({
 
           <Hr style={hr} />
           <Text style={footer}>
-            Hi {guestName}, thanks for booking with {clubName}. Show the code above or the
-            QR at reception when you arrive.
+            Hi {guestName}, thanks for booking with {clubName}. Give the code above at
+            reception when you arrive — or just your name.
           </Text>
         </Container>
       </Body>
@@ -179,8 +168,3 @@ const sectionTitle: React.CSSProperties = {
 const bodyText: React.CSSProperties = { color: "#4A5568", fontSize: 13, lineHeight: 1.6, margin: 0 };
 const link: React.CSSProperties = { color: "#0066CC", fontSize: 13, fontWeight: 600 };
 const footer: React.CSSProperties = { color: "#4A5568", fontSize: 12, lineHeight: 1.6, textAlign: "center" };
-const qrImg: React.CSSProperties = {
-  border: "1px solid #E2E8F0",
-  borderRadius: 8,
-  padding: 8,
-};

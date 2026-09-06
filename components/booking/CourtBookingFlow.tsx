@@ -11,7 +11,6 @@ import {
   OPEN_HOUR,
   buildSlotLabels,
   clubDateKey,
-  clubDayOfWeek,
   clubHHMM,
   clubWallTimeToInstant,
   PUBLIC_HORIZON_DAYS,
@@ -61,9 +60,9 @@ function toHHMM(mins: number) {
  * busiest and most expensive hours, sat off the right edge of a wide table.
  */
 const PERIODS = [
-  { id: "morning", label: "Morning", sub: "08:00–12:00", from: 8 * 60, to: 12 * 60 },
+  { id: "morning", label: "Morning", sub: "10:00–12:00", from: 10 * 60, to: 12 * 60 },
   { id: "afternoon", label: "Afternoon", sub: "12:00–17:00", from: 12 * 60, to: 17 * 60 },
-  { id: "evening", label: "Evening", sub: "17:00–23:00", from: 17 * 60, to: 23 * 60 },
+  { id: "evening", label: "Evening", sub: "17:00–24:00", from: 17 * 60, to: 24 * 60 },
 ] as const;
 
 type PeriodId = (typeof PERIODS)[number]["id"];
@@ -212,10 +211,12 @@ export function CourtBookingFlow({
   /** Mirrors the pricing_rules seed data; the server always re-prices on submit. */
   function basePriceFor(time: string, mins: 60 | 90) {
     const d = slotStartDate(time);
-    const dow = clubDayOfWeek(d);
-    const weekend = dow === 0 || dow === 6;
-    if (weekend) return mins === 60 ? 8000 : 12000;
-    return isPeakHour(d) ? (mins === 60 ? 8000 : 12000) : mins === 60 ? 2500 : 3600;
+    // Mirrors migration 0012: peak is weekday evenings from 19:00 and weekends
+    // from noon. The server re-prices on submit, so this only has to agree with
+    // the rules for the label to be honest — and when it didn't, the page
+    // quoted ₾40 while the server charged ₾80.
+    const peak = isPeakHour(d);
+    return peak ? (mins === 60 ? 8000 : 12000) : mins === 60 ? 6000 : 9000;
   }
 
   /**

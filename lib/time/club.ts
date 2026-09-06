@@ -22,8 +22,8 @@ import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
 export const CLUB_TIMEZONE = process.env.NEXT_PUBLIC_CLUB_TIMEZONE || "Asia/Tbilisi";
 
 /** The club's opening hours, in club-local time. The one source for both flows. */
-export const OPEN_HOUR = 8;
-export const CLOSE_HOUR = 23;
+export const OPEN_HOUR = 10;
+export const CLOSE_HOUR = 24;
 
 /** Minutes of staff turnover between two cars in the same wash bay. */
 export const CHANGEOVER_MINUTES = 10;
