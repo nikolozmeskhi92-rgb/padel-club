@@ -1,3 +1,4 @@
+import { CLUB_NAME } from "@/lib/club";
 import {
   Body,
   Container,
@@ -39,7 +40,7 @@ export default function BookingConfirmation({
   priceLabel = "$40.00",
   paymentStatus = "paid",
   qrDataUrl = "",
-  clubName = "Nexus Padel Club",
+  clubName = CLUB_NAME,
   clubAddress = "12 Court Lane, Tbilisi",
   siteUrl = "https://example.com",
   cancelUrl = "https://example.com/cancel/00000000-0000-0000-0000-000000000000",

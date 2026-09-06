@@ -201,11 +201,21 @@ export function CourtBookingFlow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [booked, duration, date]);
 
-  /** True when the whole period is behind us on the selected day. */
+  /**
+   * True when nothing in the period can still be booked today.
+   *
+   * This used to compare the clock against the period's nominal end, so between
+   * the last bookable start and that end — 11:30 and 12:00 for the morning —
+   * the label fell through to "Fully booked". That told the customer the courts
+   * were taken when the morning was simply over. Ask the real question instead:
+   * is there any slot left in this period that could still start?
+   */
   function periodHasPassed(from: number, to: number) {
     if (!isSameDay(date, new Date())) return false;
-    const [nh, nm] = clubHHMM(new Date()).split(":").map(Number);
-    return nh * 60 + nm >= to;
+    return !TIME_SLOTS.some((t) => {
+      const m = toMinutes(t);
+      return m >= from && m < to && m + duration <= CLOSE_MINUTES && !isPast(t);
+    });
   }
 
   const freeByPeriod = useMemo(() => {
@@ -256,9 +266,13 @@ export function CourtBookingFlow() {
           best: raw.best ? reviveSuggestion(raw.best) : null,
           alternatives: (raw.alternatives ?? []).map(reviveSuggestion),
         });
-        // Default the toggle on for a genuinely good match, off otherwise —
-        // the customer shouldn't have to opt out of something that barely fits.
-        setWantWash(raw.tier === "perfect_fit");
+        // Always off by default. This used to switch itself on for a
+        // "perfect_fit" match, which meant picking a court silently added GEL 8
+        // to the total — the customer had to notice an extra they never asked
+        // for and untick it. An upsell the buyer has to opt out of is the kind
+        // of thing that turns into an argument at the desk. Recommend it
+        // prominently, but let them choose it.
+        setWantWash(false);
       })
       .catch(() => setWashResult(null))
       .finally(() => !cancelled && setLoadingWash(false));

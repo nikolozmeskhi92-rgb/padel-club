@@ -1,8 +1,10 @@
+import { pageTitle } from "@/lib/club";
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { AdminDashboard } from "@/components/admin/AdminDashboard";
+import { clubDateKey, clubDayBounds } from "@/lib/time/club";
 
-export const metadata = { title: "Admin Dashboard — Nexus Padel Club" };
+export const metadata = { title: pageTitle("Admin Dashboard") };
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
@@ -25,10 +27,13 @@ export default async function AdminPage() {
 
   // Last 14 days of aggregated revenue for the chart (server-side RPC call, one per day
   // kept simple here — in production wrap this in a single SQL view for efficiency).
+  // get_daily_summary() buckets by the club's calendar day (see club_timezone()
+  // in migration 0002), so the dates asked for have to be the club's too —
+  // toISOString() would ask for UTC days and shift the whole chart.
   const days = Array.from({ length: 14 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (13 - i));
-    return d.toISOString().slice(0, 10);
+    return clubDateKey(d);
   });
 
   const summaries = await Promise.all(
@@ -38,16 +43,24 @@ export default async function AdminPage() {
     })
   );
 
+  // `slot` is a tstzrange, so it needs the range overlap operator — comparing it
+  // to a date string makes Postgres try to read that string as a range and fail
+  // with `malformed range literal`, which silently emptied both lists here the
+  // same way it broke /book. Bounds are the club's calendar day, not UTC's.
+  const today = clubDateKey(new Date());
+  const { start: dayStart, end: dayEnd } = clubDayBounds(today);
+  const dayRange = `[${dayStart.toISOString()},${dayEnd.toISOString()})`;
+
   const { data: todaysCourtBookings } = await supabase
     .from("court_bookings")
     .select("id, court_id, slot, status, guest_name, payment_status")
-    .gte("slot", new Date().toISOString().slice(0, 10))
+    .overlaps("slot", dayRange)
     .in("status", ["pending", "confirmed"]);
 
   const { data: todaysCarWash } = await supabase
     .from("wash_bookings")
     .select("id, bay_id, slot, status, service, guest_name")
-    .gte("slot", new Date().toISOString().slice(0, 10))
+    .overlaps("slot", dayRange)
     .in("status", ["pending", "confirmed"]);
 
   return (

@@ -1,0 +1,29 @@
+/**
+ * The club's identity, in one place.
+ *
+ * The name used to be typed out in eleven files — every page's metadata, the
+ * header, the footer, the email template, the blog author — while
+ * NEXT_PUBLIC_CLUB_NAME sat in the environment being read by almost nothing.
+ * Renaming the club meant finding all eleven and missing at least one.
+ *
+ * Set NEXT_PUBLIC_CLUB_NAME / NEXT_PUBLIC_CLUB_ADDRESS in .env.local; these are
+ * the fallbacks.
+ */
+export const CLUB_NAME = process.env.NEXT_PUBLIC_CLUB_NAME || "Luki Padel";
+export const CLUB_ADDRESS = process.env.NEXT_PUBLIC_CLUB_ADDRESS || "Tbilisi";
+
+/** "<page> — Luki Padel", so every tab title is built the same way. */
+export function pageTitle(page: string): string {
+  return `${page} — ${CLUB_NAME}`;
+}
+
+/**
+ * The wordmark is set in two weights: everything but the last word, then the
+ * last word in the brand colour ("LUKI **PADEL**"). Splitting on the final
+ * space keeps that treatment working whatever the club is called.
+ */
+export function wordmarkParts(): { lead: string; accent: string } {
+  const words = CLUB_NAME.trim().split(/\s+/);
+  if (words.length === 1) return { lead: "", accent: words[0] };
+  return { lead: words.slice(0, -1).join(" "), accent: words[words.length - 1] };
+}

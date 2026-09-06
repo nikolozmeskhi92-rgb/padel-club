@@ -1,8 +1,9 @@
+import { pageTitle } from "@/lib/club";
 import Link from "next/link";
 import { allPosts } from "contentlayer/generated";
 import { format } from "date-fns";
 
-export const metadata = { title: "News — Nexus Padel Club" };
+export const metadata = { title: pageTitle("News") };
 
 const CATEGORY_LABEL: Record<string, string> = {
   news: "News",

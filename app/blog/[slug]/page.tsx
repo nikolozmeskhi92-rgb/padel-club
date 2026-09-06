@@ -2,6 +2,7 @@ import { allPosts } from "contentlayer/generated";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
 import { useMDXComponent } from "next-contentlayer2/hooks";
+import { pageTitle } from "@/lib/club";
 
 export function generateStaticParams() {
   return allPosts.map((p) => ({ slug: p.slug }));
@@ -11,7 +12,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const post = allPosts.find((p) => p.slug === slug);
-  return { title: post ? `${post.title} — Nexus Padel Club` : "Post not found" };
+  return { title: post ? pageTitle(post.title) : "Post not found" };
 }
 
 /**

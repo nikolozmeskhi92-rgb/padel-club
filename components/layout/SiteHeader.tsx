@@ -1,3 +1,6 @@
+import { wordmarkParts } from "@/lib/club";
+
+const wordmark = wordmarkParts();
 import Link from "next/link";
 
 const NAV = [
@@ -11,7 +14,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b border-line bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <Link href="/" className="font-heading text-lg font-extrabold tracking-tight text-ink">
-          NEXUS <span className="text-brand">PADEL</span>
+          {wordmark.lead} <span className="text-brand">{wordmark.accent}</span>
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

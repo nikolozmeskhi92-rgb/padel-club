@@ -1,4 +1,4 @@
-# Nexus Padel Club — Booking Platform
+# Luki Padel — Booking Platform
 
 A production-shaped booking platform for a padel club: 10 courts + 4 car wash
 bays, atomic double-booking prevention, a recommendation engine that cross-sells

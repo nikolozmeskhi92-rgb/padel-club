@@ -1,6 +1,7 @@
+import { pageTitle } from "@/lib/club";
 import { CLOSE_HOUR, FREE_CANCELLATION_HOURS } from "@/lib/time/club";
 
-export const metadata = { title: "Directions — Nexus Padel Club" };
+export const metadata = { title: pageTitle("Directions") };
 
 export default function DirectionsPage() {
   const address = process.env.NEXT_PUBLIC_CLUB_ADDRESS || "12 Court Lane";
