@@ -99,9 +99,43 @@
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+/* ---------------------------------------------------------------------------
+   Metric-matched fallbacks.
+
+   Until the webfont arrives the browser draws the page in whatever comes next
+   in the stack, and Arial is narrower and shorter than both of ours — so the
+   headline visibly changed size the moment the real font landed. These two
+   faces are Arial with its metrics bent to match, so the swap moves nothing:
+   same line height, same width, same baseline.
+
+   The numbers are measured, not guessed: size-adjust is the ratio of the two
+   fonts' average character width (weighted by English letter frequency, the
+   same method next/font uses), and the ascent/descent are the font's own OS/2
+   typo metrics divided by that ratio. Recompute them if a font file changes.
+   --------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial"), local("Helvetica Neue"), local("Liberation Sans");
+  size-adjust: 104.67%;
+  ascent-override: 92.55%;
+  descent-override: 23.04%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Plus Jakarta Sans Fallback";
+  src: local("Arial"), local("Helvetica Neue"), local("Liberation Sans");
+  size-adjust: 106.45%;
+  ascent-override: 97.51%;
+  descent-override: 20.85%;
+  line-gap-override: 0%;
+}
+
 :root {
-  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-heading: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Inter", "Inter Fallback", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-heading: "Plus Jakarta Sans", "Plus Jakarta Sans Fallback", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
 }
 
 @layer base {
