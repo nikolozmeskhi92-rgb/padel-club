@@ -164,7 +164,7 @@ export function AdminDashboard({
 
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div className="mx-auto max-w-7xl px-7 sm:px-8 py-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm text-ink-muted/80">Welcome back, {adminName}</p>

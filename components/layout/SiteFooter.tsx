@@ -20,18 +20,25 @@ export function SiteFooter() {
   const socials = SOCIALS.filter((s) => s.href);
 
   return (
-    <footer className="border-t border-line py-10">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 text-sm text-ink-muted/80 sm:flex-row">
+    <footer className="border-t border-line py-10 text-center sm:text-left">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-7 sm:px-8 text-sm text-ink-muted/80 sm:flex-row">
         <p>© {new Date().getFullYear()} {CLUB_NAME}. All rights reserved.</p>
 
-        <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
-          <div className="flex gap-6">
-            <a href="/find" className="hover:text-ink-muted">Find your booking</a>
-            <a href="/directions" className="hover:text-ink-muted">Directions</a>
-            <a href="/blog" className="hover:text-ink-muted">News</a>
-            <a href="/privacy" className="hover:text-ink-muted">Privacy</a>
-            <a href="/terms" className="hover:text-ink-muted">Terms</a>
-            <a href="/admin" className="hover:text-ink-muted">Staff login</a>
+        <div className="flex w-full flex-col items-center gap-4 sm:w-auto sm:flex-row sm:gap-6">
+          {/*
+            Six links in one un-wrapping row is wider than any phone. The row
+            was centred, so it overflowed at both ends and the first and last
+            links — "Find your booking" and "Staff login", the two people
+            actually go looking for — were the ones sliced off. Wrapping costs a
+            line on a phone and nothing at all above sm, where they still fit.
+          */}
+          <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 sm:flex-nowrap sm:gap-6">
+            <a href="/find" className="py-1 hover:text-ink-muted">Find your booking</a>
+            <a href="/directions" className="py-1 hover:text-ink-muted">Directions</a>
+            <a href="/blog" className="py-1 hover:text-ink-muted">News</a>
+            <a href="/privacy" className="py-1 hover:text-ink-muted">Privacy</a>
+            <a href="/terms" className="py-1 hover:text-ink-muted">Terms</a>
+            <a href="/admin" className="py-1 hover:text-ink-muted">Staff login</a>
           </div>
 
           {socials.length > 0 && (

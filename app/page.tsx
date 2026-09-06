@@ -23,7 +23,7 @@ export default function HomePage() {
           (unlike <picture>), so a "mobile cut" would just be served to everyone.
         */}
         <video
-          className="absolute inset-0 -z-10 h-full w-full object-cover"
+          className="absolute inset-0 z-0 h-full w-full object-cover"
           autoPlay
           muted
           loop
@@ -38,17 +38,30 @@ export default function HomePage() {
         </video>
 
         {/* Two overlays: a vertical wash for overall contrast, and a stronger
-            left-side gradient so the headline holds against the bright court. */}
+            left-side gradient so the headline holds against the bright court.
+            On a phone the second one runs top-to-bottom instead: a left-to-right
+            fade clears a column of space nobody has on a 390px screen, and the
+            headline ended up over the bright half of the court. */}
         <div
-          className="absolute inset-0 -z-10 bg-gradient-to-b from-brand-dark/80 via-brand-dark/55 to-brand-dark/85"
+          className="absolute inset-0 z-0 bg-gradient-to-b from-brand-dark/80 via-brand-dark/55 to-brand-dark/85"
           aria-hidden="true"
         />
         <div
-          className="absolute inset-0 -z-10 bg-gradient-to-r from-brand-dark/85 via-brand-dark/40 to-transparent"
+          className="absolute inset-0 z-0 bg-gradient-to-b from-brand-dark/85 via-brand-dark/60 to-brand-dark/85 md:bg-gradient-to-r md:from-brand-dark/85 md:via-brand-dark/40 md:to-transparent"
           aria-hidden="true"
         />
 
-        <div className="mx-auto max-w-6xl px-6 py-24 md:py-32">
+        {/*
+          z-10 and a GPU layer, not a negative z-index on the video.
+
+          iOS Safari composites a playing <video> on the GPU, and anything the
+          page pushed behind it with a negative z-index can end up genuinely
+          behind that layer: on an iPhone the headline was invisible until you
+          touched the screen and forced a repaint. Keeping every layer at zero
+          or above, and giving this one its own compositing layer, means the
+          text is painted over the video by the same machinery that draws it.
+        */}
+        <div className="relative z-10 mx-auto max-w-6xl transform-gpu px-7 py-16 sm:px-8 sm:py-24 md:py-32">
           <p className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-semibold text-white/85">
             <span className="flex items-center gap-1.5">
               <Clock className="h-4 w-4 text-brand-accent" />
@@ -60,28 +73,37 @@ export default function HomePage() {
             </span>
           </p>
 
-          <h1 className="max-w-3xl font-heading text-5xl font-extrabold uppercase leading-[1.05] tracking-tight text-white md:text-7xl">
+          {/*
+            48px was a desktop headline shrunk to fit rather than a phone one:
+            uppercase extrabold at that size ran the full width of a 390px
+            screen, wrapped to four lines and left no air at either edge. The
+            line break is only forced once there is room for it — on a phone the
+            text wraps where it naturally falls.
+          */}
+          <h1 className="max-w-3xl font-heading text-[2rem] font-extrabold uppercase leading-[1.08] tracking-tight text-white sm:text-5xl sm:leading-[1.05] md:text-7xl">
             Your court is waiting.
-            <br />
+            <br className="hidden sm:inline" />{" "}
             Book it in 20 seconds.
           </h1>
 
-          <p className="mt-6 max-w-xl text-lg text-white/80">
+          <p className="mt-5 max-w-xl text-base text-white/80 sm:mt-6 sm:text-lg">
             Real-time availability across all 10 courts, instant confirmation, and
             a clean car from our wash bay — all in one checkout.
           </p>
 
-          <div className="mt-10 flex flex-wrap gap-4">
+          {/* Full width on a phone: two buttons at their natural width leave a
+              ragged edge, and a thumb wants the whole row to aim at. */}
+          <div className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap sm:gap-4">
             <Link
               href="/book"
-              className="group flex items-center gap-2 rounded-court bg-brand px-6 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
+              className="group flex items-center justify-center gap-2 rounded-court bg-brand px-6 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02] sm:justify-start"
             >
               Book a court
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
             <Link
               href="/car-wash"
-              className="flex items-center gap-2 rounded-court border border-white/25 bg-white/10 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+              className="flex items-center justify-center gap-2 rounded-court border border-white/25 bg-white/10 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20 sm:justify-start"
             >
               <Car className="h-4 w-4" />
               Book a car wash only
@@ -90,14 +112,14 @@ export default function HomePage() {
 
           {/* Prices are the first thing a new visitor looks for; giving the
               cheapest real rate here saves them a trip into the booking grid. */}
-          <p className="mt-8 text-sm text-white/65">
+          <p className="mt-6 text-sm text-white/65 sm:mt-8">
             From {formatMoney(6000)} an hour off-peak · {formatMoney(800)} car wash
           </p>
         </div>
       </section>
 
       {/* ---------- TRUST STRIP ---------- */}
-      <section className="mx-auto max-w-6xl px-6 py-16">
+      <section className="mx-auto max-w-6xl px-7 sm:px-8 py-16">
         <div className="grid gap-8 sm:grid-cols-3">
           <Feature
             icon={<Timer className="h-5 w-5" />}
@@ -119,7 +141,7 @@ export default function HomePage() {
 
       {/* ---------- GALLERY ---------- */}
       <section className="border-y border-line bg-surface-muted">
-        <div className="mx-auto max-w-6xl px-6 py-16">
+        <div className="mx-auto max-w-6xl px-7 sm:px-8 py-16">
           <h2 className="font-heading text-2xl font-extrabold uppercase tracking-tight text-ink md:text-3xl">
             Panoramic glass. Proper surfaces.
           </h2>
@@ -178,26 +200,26 @@ export default function HomePage() {
           src="/media/hero-poster.jpg"
           alt=""
           aria-hidden="true"
-          className="absolute inset-0 -z-10 h-full w-full object-cover object-center"
+          className="absolute inset-0 z-0 h-full w-full object-cover object-center"
           loading="lazy"
           decoding="async"
         />
         <div
-          className="absolute inset-0 -z-10 bg-gradient-to-r from-brand-dark/95 via-brand-dark/80 to-brand-dark/50"
+          className="absolute inset-0 z-0 bg-gradient-to-r from-brand-dark/95 via-brand-dark/80 to-brand-dark/50"
           aria-hidden="true"
         />
-        <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-6 px-6 py-20 md:flex-row md:items-center">
+        <div className="relative z-10 mx-auto flex max-w-6xl transform-gpu flex-col items-start justify-between gap-6 px-7 py-16 sm:px-8 md:flex-row md:items-center md:py-20">
           <div>
-            <h2 className="font-heading text-2xl font-extrabold uppercase tracking-tight text-white md:text-3xl">
+            <h2 className="font-heading text-xl font-extrabold uppercase tracking-tight text-white sm:text-2xl md:text-3xl">
               Finish your match, drive off in a clean car.
             </h2>
-            <p className="mt-2 max-w-md text-white/75">
+            <p className="mt-2 max-w-md text-sm text-white/75 sm:text-base">
               Add a wash cycle to your court booking — same checkout, ready when you are.
             </p>
           </div>
           <Link
             href="/book"
-            className="shrink-0 rounded-court bg-brand px-6 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
+            className="w-full shrink-0 rounded-court bg-brand px-6 py-3.5 text-center text-sm font-semibold text-white transition-transform hover:scale-[1.02] md:w-auto md:py-3"
           >
             Book court + car wash
           </Link>

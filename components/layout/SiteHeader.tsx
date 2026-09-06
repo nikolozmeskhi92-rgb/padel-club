@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { wordmarkParts } from "@/lib/club";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { MobileNav } from "./MobileNav";
 
 const NAV = [
   { href: "/book", label: "Courts" },
@@ -43,7 +44,7 @@ export async function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-white/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-7 sm:px-8">
         <Link href="/" className="font-heading text-lg font-extrabold tracking-tight text-ink">
           {wordmark.lead} <span className="text-brand">{wordmark.accent}</span>
         </Link>
@@ -60,26 +61,32 @@ export async function SiteHeader() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
+        {/*
+          Below md every one of these was hidden, which left a phone with a
+          logo, a booking button and no way to reach the car wash, the news or
+          its own account. They stay hidden here — but the same links are in the
+          menu beside them now, rather than nowhere.
+        */}
+        <div className="flex items-center gap-1 sm:gap-3">
           {user ? (
             <>
               {isStaff && (
                 <Link
                   href="/admin"
-                  className="hidden text-sm font-semibold text-brand transition-colors hover:text-brand-hover sm:block"
+                  className="hidden text-sm font-semibold text-brand transition-colors hover:text-brand-hover md:block"
                 >
                   Dashboard
                 </Link>
               )}
               <Link
                 href="/account"
-                className="hidden max-w-[12rem] truncate text-sm text-ink-muted transition-colors hover:text-ink sm:block"
+                className="hidden max-w-[12rem] truncate text-sm text-ink-muted transition-colors hover:text-ink md:block"
                 title="My bookings"
               >
                 {displayName}
               </Link>
               {/* A form, because signing out is a POST — see app/auth/signout. */}
-              <form action="/auth/signout" method="post">
+              <form action="/auth/signout" method="post" className="hidden md:block">
                 <button
                   type="submit"
                   className="text-sm text-ink-muted transition-colors hover:text-ink"
@@ -91,17 +98,23 @@ export async function SiteHeader() {
           ) : (
             <Link
               href="/login"
-              className="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:block"
+              className="hidden text-sm text-ink-muted transition-colors hover:text-ink md:block"
             >
               Sign in
             </Link>
           )}
           <Link
             href="/book"
-            className="rounded-court bg-brand px-4 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.03] active:scale-[0.98]"
+            className="rounded-court bg-brand px-3.5 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.03] active:scale-[0.98] sm:px-4"
           >
             Book a court
           </Link>
+          <MobileNav
+            nav={NAV}
+            signedIn={!!user}
+            displayName={displayName}
+            isStaff={isStaff}
+          />
         </div>
       </div>
     </header>

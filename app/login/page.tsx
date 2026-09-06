@@ -20,7 +20,7 @@ export default function LoginPage() {
 
 function LoginFallback() {
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center px-6">
+    <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center px-7 sm:px-8">
       <div className="h-7 w-44 animate-pulse rounded-court bg-surface-muted" />
       <div className="mt-2 h-4 w-56 animate-pulse rounded-court bg-surface-muted" />
       <div className="mt-8 space-y-3">
@@ -88,7 +88,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center px-6">
+    <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center px-7 sm:px-8">
       <h1 className="font-heading text-2xl font-extrabold text-ink">Sign in</h1>
       <p className="mt-1 text-sm text-ink-muted">
         Keep your bookings in one place. Staff land on the dashboard.

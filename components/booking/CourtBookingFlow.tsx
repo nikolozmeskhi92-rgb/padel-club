@@ -449,7 +449,7 @@ export function CourtBookingFlow({
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12">
+    <div className="mx-auto max-w-5xl px-7 sm:px-8 py-12">
       <h1 className="font-heading text-3xl font-extrabold uppercase tracking-tight text-ink md:text-4xl">Book a court</h1>
       <p className="mt-2 text-ink-muted">Pick a day and a time — we&apos;ll show you which courts are free.</p>
 
@@ -460,7 +460,7 @@ export function CourtBookingFlow({
         </div>
       ) : (
         <>
-          <div className="mt-8 flex gap-2 overflow-x-auto pb-2">
+          <div className="-mx-7 mt-8 flex snap-x snap-mandatory gap-2 overflow-x-auto px-7 pb-2 sm:-mx-8 sm:px-8 [&>*]:snap-start">
             {dayChips.map((d) => (
               <button
                 key={d.toISOString()}
@@ -650,7 +650,7 @@ export function CourtBookingFlow({
             exit={{ y: 80, opacity: 0 }}
             className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 backdrop-blur-md"
           >
-            <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+            <div className="mx-auto flex max-w-5xl items-center justify-between px-7 sm:px-8 py-4">
               <div>
                 <p className="text-sm font-semibold text-ink">
                   Court {selectedCourt} · {format(date, "EEE MMM d")} · {selectedTime}
@@ -973,7 +973,7 @@ function SuccessPanel({
   emailSent: boolean;
 }) {
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center px-6 py-24 text-center">
+    <div className="mx-auto flex max-w-md flex-col items-center px-7 sm:px-8 py-24 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-accent/10">
         <Check className="h-8 w-8 text-brand-accent" />
       </div>

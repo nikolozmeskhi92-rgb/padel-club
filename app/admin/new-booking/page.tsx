@@ -20,7 +20,7 @@ export default async function AdminNewBookingPage() {
   await requireStaff("/admin/new-booking");
 
   return (
-    <div className="mx-auto max-w-5xl px-6 pt-10">
+    <div className="mx-auto max-w-5xl px-7 sm:px-8 pt-10">
       <Link href="/admin" className="text-sm text-ink-muted hover:text-ink">
         ← Dashboard
       </Link>

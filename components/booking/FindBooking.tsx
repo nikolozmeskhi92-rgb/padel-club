@@ -72,7 +72,7 @@ export function FindBooking() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-6 py-16">
+    <div className="mx-auto max-w-md px-7 sm:px-8 py-16">
       <h1 className="font-heading text-3xl font-extrabold uppercase tracking-tight text-ink">
         Find your booking
       </h1>

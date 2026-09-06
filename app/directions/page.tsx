@@ -7,7 +7,7 @@ export default function DirectionsPage() {
   const address = process.env.NEXT_PUBLIC_CLUB_ADDRESS || "12 Court Lane";
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-14">
+    <div className="mx-auto max-w-2xl px-7 sm:px-8 py-14">
       <h1 className="font-heading text-3xl font-extrabold text-ink">Find us</h1>
       <p className="mt-3 text-ink-muted">{address}</p>
       <div className="mt-8 aspect-video w-full overflow-hidden rounded-court border border-line bg-surface-base shadow-card">

@@ -245,7 +245,7 @@ export function CancelBookingFlow({ token }: { token: string }) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-6 py-12 text-center">
+    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-7 sm:px-8 py-12 text-center">
       {children}
     </div>
   );

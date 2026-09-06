@@ -15,7 +15,7 @@ export default function BlogPage() {
   const posts = allPosts.sort((a, b) => +new Date(b.date) - +new Date(a.date));
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-14">
+    <div className="mx-auto max-w-5xl px-7 sm:px-8 py-14">
       <h1 className="font-heading text-3xl font-extrabold text-ink md:text-4xl">News & tournaments</h1>
       <p className="mt-2 text-ink-muted">Court updates, results, and what's coming up.</p>
 

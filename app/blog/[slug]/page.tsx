@@ -31,7 +31,7 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
   if (!post) notFound();
 
   return (
-    <article className="mx-auto max-w-2xl px-6 py-14">
+    <article className="mx-auto max-w-2xl px-7 sm:px-8 py-14">
       <p className="text-xs font-semibold text-brand">{post.category}</p>
       <h1 className="mt-2 font-heading text-3xl font-extrabold text-ink">{post.title}</h1>
       <p className="mt-2 text-sm text-ink-muted/70">

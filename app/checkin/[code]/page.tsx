@@ -25,7 +25,7 @@ export default async function CheckinPage({ params }: { params: Promise<{ code: 
   const booking = courtBooking ?? washBooking;
 
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col items-center justify-center px-6 text-center">
+    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col items-center justify-center px-7 sm:px-8 text-center">
       {booking ? (
         <>
           <CheckCircle2 className="h-12 w-12 text-brand-accent" />
