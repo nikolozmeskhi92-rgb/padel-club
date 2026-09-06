@@ -29,6 +29,8 @@ export function SiteFooter() {
             <a href="/find" className="hover:text-ink-muted">Find your booking</a>
             <a href="/directions" className="hover:text-ink-muted">Directions</a>
             <a href="/blog" className="hover:text-ink-muted">News</a>
+            <a href="/privacy" className="hover:text-ink-muted">Privacy</a>
+            <a href="/terms" className="hover:text-ink-muted">Terms</a>
             <a href="/admin" className="hover:text-ink-muted">Staff login</a>
           </div>
 
