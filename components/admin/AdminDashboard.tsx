@@ -254,8 +254,14 @@ export function AdminDashboard({
               </button>
             )}
             <Link
+              href="/admin/notifications"
+              className="ml-auto rounded-court border border-line bg-surface-base px-4 py-1.5 text-sm font-medium text-ink-muted hover:text-ink"
+            >
+              Booking alerts
+            </Link>
+            <Link
               href="/admin/new-booking"
-              className="ml-auto rounded-court bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-hover"
+              className="rounded-court bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-hover"
             >
               New booking
             </Link>

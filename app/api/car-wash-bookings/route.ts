@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createServerSupabase, createServiceRoleClient } from "@/lib/supabase/server";
 import { resolvePrice } from "@/lib/pricing";
 import { sendBookingConfirmationEmail } from "@/lib/email/send";
+import { sendStaffBookingAlert } from "@/lib/email/notify-staff";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import {
   CHANGEOVER_MINUTES,
@@ -140,8 +141,20 @@ export async function POST(req: NextRequest) {
     return false;
   });
 
+  const staffAlert = await sendStaffBookingAlert({
+    type: "car_wash",
+    resourceName: `Wash Bay ${bayId} · ${String(service).replace(/_/g, " ")}`,
+    bookingCode: booking.booking_code,
+    guestName,
+    guestEmail,
+    start,
+    durationMinutes,
+    priceCents: matchedRule.price_cents,
+    bookedBy: "customer",
+  });
+
   return NextResponse.json(
-    { booking, emailSent },
+    { booking, emailSent, staffAlerted: staffAlert.sent },
     { status: 201 }
   );
 }

@@ -9,7 +9,7 @@ import { formatMoney } from "@/lib/currency";
 // `next build` (page-data collection) on any machine without the key set.
 let resendClient: Resend | null = null;
 
-function getResend(): Resend | null {
+export function getResend(): Resend | null {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return null;
   if (!resendClient) resendClient = new Resend(apiKey);

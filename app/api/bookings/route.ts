@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createServerSupabase, createServiceRoleClient } from "@/lib/supabase/server";
 import { resolvePrice } from "@/lib/pricing";
 import { sendBookingConfirmationEmail } from "@/lib/email/send";
+import { sendStaffBookingAlert } from "@/lib/email/notify-staff";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import {
   clubDayBounds,
@@ -195,10 +196,27 @@ export async function POST(req: NextRequest) {
     return false;
   });
 
+  // And tell the club. Awaited rather than left dangling: on a serverless host
+  // the function can be frozen the moment the response is returned, and a
+  // background promise dies with it. sendStaffBookingAlert never throws and
+  // never blocks longer than the send itself.
+  const staffAlert = await sendStaffBookingAlert({
+    type: "court",
+    resourceName: `Court ${courtId}`,
+    bookingCode: booking.booking_code,
+    guestName,
+    guestEmail,
+    guestPhone,
+    start,
+    durationMinutes,
+    priceCents: totalCents,
+    bookedBy: staff ? "desk" : "customer",
+  });
+
   // The UI used to promise "a confirmation was sent to <email>" unconditionally.
   // Without RESEND_API_KEY nothing is sent, so say which actually happened.
   return NextResponse.json(
-    { booking, emailSent },
+    { booking, emailSent, staffAlerted: staffAlert.sent },
     { status: 201 }
   );
 }
