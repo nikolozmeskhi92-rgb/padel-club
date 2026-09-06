@@ -184,12 +184,18 @@ export async function GET(req: NextRequest) {
   // the window by the club's offset and clipped the ends of the day.
   const { start: dayStart, end: dayEnd } = clubDayBounds(date);
 
+  // `slot` is a tstzrange, so it has to be matched with the range OVERLAP
+  // operator. Comparing it to a timestamp (`.gte`/`.lt`) made Postgres try to
+  // read the timestamp as a range and fail with `malformed range literal`, so
+  // this endpoint always returned FETCH_FAILED and /book always fell back to
+  // its "couldn't load live availability" panel. Overlap is also the correct
+  // question to ask: show bookings that touch this day, not only ones that
+  // start inside it.
   const { data, error } = await supabase
     .from("court_bookings")
     .select("id, court_id, slot, status")
     .in("status", ["pending", "confirmed"])
-    .gte("slot", dayStart.toISOString())
-    .lt("slot", dayEnd.toISOString());
+    .overlaps("slot", `[${dayStart.toISOString()},${dayEnd.toISOString()})`);
 
   if (error) {
     return NextResponse.json({ error: "FETCH_FAILED" }, { status: 500 });

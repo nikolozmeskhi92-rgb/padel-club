@@ -155,12 +155,12 @@ export async function GET(req: NextRequest) {
   const supabase = createServiceRoleClient();
   const { start: dayStart, end: dayEnd } = clubDayBounds(date);
 
+  // Same range-overlap rule as the court endpoint — `slot` is a tstzrange.
   const { data, error } = await supabase
     .from("wash_bookings")
     .select("id, bay_id, slot, status")
     .in("status", ["pending", "confirmed"])
-    .gte("slot", dayStart.toISOString())
-    .lt("slot", dayEnd.toISOString());
+    .overlaps("slot", `[${dayStart.toISOString()},${dayEnd.toISOString()})`);
 
   if (error) {
     return NextResponse.json({ error: "FETCH_FAILED" }, { status: 500 });
