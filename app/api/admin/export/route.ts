@@ -63,7 +63,9 @@ export async function GET(req: NextRequest) {
   const supabase = createServiceRoleClient();
   let header: string[] = [];
   let rows: unknown[][] = [];
-  let name = dataset;
+  // Annotated: without it TypeScript infers the literal union from `dataset`
+  // and every `name = \`summary-...\`` below is a type error.
+  let name: string = dataset;
 
   if (dataset === "summary") {
     if (all) {

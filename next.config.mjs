@@ -1,3 +1,5 @@
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { withContentlayer } from "next-contentlayer2";
 
 /**
@@ -22,6 +24,14 @@ import { withContentlayer } from "next-contentlayer2";
  */
 const nextConfig = {
   poweredByHeader: false,
+
+  /*
+   * A stray package-lock.json sits in C:\Users\user, so Next walks up, finds
+   * two lockfiles and picks the wrong one as the workspace root — which makes
+   * it trace files from the whole home directory. Pinning the root to this
+   * folder settles it without touching a file outside the project.
+   */
+  outputFileTracingRoot: dirname(fileURLToPath(import.meta.url)),
 };
 
 export default withContentlayer(nextConfig);
