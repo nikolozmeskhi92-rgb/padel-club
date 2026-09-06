@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2 } from "lucide-react";
+import { FcGoogle } from "react-icons/fc";
+import { FaFacebookF } from "react-icons/fa6";
 
 // useSearchParams() opts a component out of static prerendering, so the form
 // lives in its own component behind a Suspense boundary. Without it, `next build`
@@ -100,28 +102,48 @@ function LoginForm() {
 
       <div className="mt-8 space-y-3">
         {/*
-          Plain text buttons. Google's branding guidelines require their own
-          supplied mark on a "Sign in with Google" button rather than a
-          hand-drawn copy, so drop the official asset in here from
-          developers.google.com/identity/branding-guidelines when you have it —
-          same for Meta's. Text-only is correct and unbranded until then.
+          The marks come from react-icons, which ships the official glyphs —
+          Google's branding guidelines ask for their supplied mark rather than a
+          hand-drawn copy, and a redrawn logo would be both inaccurate and not
+          ours to redraw.
+
+          The icon sits in a fixed-width slot on the left with the label
+          centred, which is the pattern every one of these buttons uses: the two
+          labels are different lengths, and centring the icon with the text
+          would leave the two marks at different x positions, so the pair reads
+          as crooked. The spinner replaces the mark in place rather than being
+          added beside it, so nothing shifts when a button is pressed.
         */}
         <button
           type="button"
           onClick={() => signInWith("google")}
           disabled={oauthLoading !== null}
-          className="flex w-full items-center justify-center gap-2 rounded-court border border-line bg-surface-base py-3 text-sm font-semibold text-ink transition-colors hover:border-ink-muted/40 disabled:opacity-50"
+          className="relative flex w-full items-center justify-center rounded-court border border-line bg-surface-base py-3 text-sm font-semibold text-ink transition-colors hover:border-ink-muted/40 disabled:opacity-50"
         >
-          {oauthLoading === "google" && <Loader2 className="h-4 w-4 animate-spin" />}
+          <span className="absolute left-4 flex h-5 w-5 items-center justify-center">
+            {oauthLoading === "google" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FcGoogle className="h-5 w-5" />
+            )}
+          </span>
           Continue with Google
         </button>
         <button
           type="button"
           onClick={() => signInWith("facebook")}
           disabled={oauthLoading !== null}
-          className="flex w-full items-center justify-center gap-2 rounded-court border border-line bg-surface-base py-3 text-sm font-semibold text-ink transition-colors hover:border-ink-muted/40 disabled:opacity-50"
+          className="relative flex w-full items-center justify-center rounded-court border border-line bg-surface-base py-3 text-sm font-semibold text-ink transition-colors hover:border-ink-muted/40 disabled:opacity-50"
         >
-          {oauthLoading === "facebook" && <Loader2 className="h-4 w-4 animate-spin" />}
+          <span className="absolute left-4 flex h-5 w-5 items-center justify-center">
+            {oauthLoading === "facebook" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              // Meta's own blue, on their own mark. Everything else on this
+              // button stays in the club's palette.
+              <FaFacebookF className="h-[18px] w-[18px] text-[#1877F2]" />
+            )}
+          </span>
           Continue with Facebook
         </button>
       </div>

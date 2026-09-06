@@ -20,6 +20,24 @@ export const CLUB_ADDRESS = process.env.NEXT_PUBLIC_CLUB_ADDRESS || "Tbilisi";
  */
 export const CLUB_PHONE = process.env.NEXT_PUBLIC_CLUB_PHONE || "";
 
+/**
+ * The club's social accounts.
+ *
+ * Env-driven and empty by default. An icon with no address behind it is worse
+ * than no icon — someone taps it, nothing happens, and the club looks broken —
+ * so the footer shows a link only once its URL is set. Fill these in
+ * .env.local and they appear:
+ *
+ *   NEXT_PUBLIC_INSTAGRAM_URL=https://instagram.com/...
+ *   NEXT_PUBLIC_FACEBOOK_URL=https://facebook.com/...
+ *   NEXT_PUBLIC_YOUTUBE_URL=https://youtube.com/@...
+ */
+export const SOCIAL_LINKS = {
+  instagram: process.env.NEXT_PUBLIC_INSTAGRAM_URL || "",
+  facebook: process.env.NEXT_PUBLIC_FACEBOOK_URL || "",
+  youtube: process.env.NEXT_PUBLIC_YOUTUBE_URL || "",
+} as const;
+
 /** "<page> — Luki Padel", so every tab title is built the same way. */
 export function pageTitle(page: string): string {
   return `${page} — ${CLUB_NAME}`;
