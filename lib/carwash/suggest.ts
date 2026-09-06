@@ -98,9 +98,21 @@ function minutesBetween(a: Date, b: Date): number {
  * An hour on the CLUB's clock, not the server's. `setHours` here meant the
  * search window followed whatever machine happened to be running the app —
  * correct on a laptop in Tbilisi, an hour or four out on a cloud host.
+ *
+ * It is built from the club day's own midnight rather than from a "HH:00"
+ * string, because the club now closes at 24:00 and "24:00" is not a wall-clock
+ * time. Asked for it, the parser did not complain — it quietly returned 00:00
+ * of the SAME day, which put closing fourteen hours before opening. The
+ * candidate loop then never ran a single iteration and every request came back
+ * `no_wash_today`: the car wash had been silently unbookable, on every device,
+ * since the day the hours changed from 23:00 to 24:00.
+ *
+ * Tbilisi has no daylight saving, so adding hours to local midnight is exact.
+ * This is the same arithmetic clubDayBounds() already uses for the same reason.
  */
 function atHour(date: Date, hour: number): Date {
-  return clubWallTimeToInstant(clubDateKey(date), `${String(hour).padStart(2, "0")}:00`);
+  const midnight = clubWallTimeToInstant(clubDateKey(date), "00:00");
+  return new Date(midnight.getTime() + hour * 60 * 60 * 1000);
 }
 
 function fmt(d: Date): string {

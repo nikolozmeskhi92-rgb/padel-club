@@ -197,7 +197,10 @@ export function CourtMap({
                       : `${court.name} ${s.label} — free`;
 
                 const cellClass = cn(
-                  "m-[1px] h-7 flex-1 rounded-[3px] border transition-colors",
+                  // No colour transition: 280 cells fading at once is more paint than iOS
+                  // Safari reliably flushes, and a half-finished fade is exactly
+                  // what left old selections visible on the map.
+                  "m-[1px] h-7 flex-1 rounded-[3px] border",
                   past
                     ? "border-dashed border-line/70 bg-transparent"
                     : b

@@ -57,28 +57,38 @@ describe("club wall clock", () => {
 });
 
 describe("opening hours", () => {
-  it("accepts the whole trading day, including the morning", () => {
-    // The old guard compared getUTCHours() to 8..23 and rejected every one of
-    // these with OUTSIDE_OPENING_HOURS.
-    for (const label of ["08:00", "09:00", "10:00", "11:00", "11:30"]) {
+  it("accepts the whole trading day, including the first hour", () => {
+    // The old guard compared getUTCHours() to a fixed pair and rejected the
+    // start of the day outright with OUTSIDE_OPENING_HOURS. Derived from
+    // OPEN_HOUR so it follows the club rather than needing an edit every time
+    // the hours move — which is exactly how this file went stale.
+    for (const h of [OPEN_HOUR, OPEN_HOUR + 1, OPEN_HOUR + 2]) {
+      const label = `${String(h).padStart(2, "0")}:00`;
       const i = clubWallTimeToInstant("2026-09-07", label);
       expect(isWithinOpeningHours(i, 60), `${label} should be bookable`).toBe(true);
     }
   });
 
   it("rejects times before opening", () => {
-    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", "07:30"), 60)).toBe(false);
+    const before = `${String(OPEN_HOUR - 1).padStart(2, "0")}:30`;
+    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", before), 60)).toBe(false);
     expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", "03:00"), 60)).toBe(false);
   });
 
   it("requires the slot to finish by closing, not merely start before it", () => {
-    // 22:00 + 60 ends exactly at 23:00 — fine.
-    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", "22:00"), 60)).toBe(true);
-    // 22:30 + 60 would run to 23:30.
-    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", "22:30"), 60)).toBe(false);
-    // A 90-minute booking needs to start by 21:30.
-    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", "21:30"), 90)).toBe(true);
-    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", "22:00"), 90)).toBe(false);
+    const lastHour = `${String(CLOSE_HOUR - 1).padStart(2, "0")}:00`;
+    const halfPastLast = `${String(CLOSE_HOUR - 1).padStart(2, "0")}:30`;
+    const ninetyLatest = `${String(CLOSE_HOUR - 2).padStart(2, "0")}:30`;
+    // The last hour ends exactly at closing — fine.
+    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", lastHour), 60)).toBe(true);
+    // Half an hour later would run past it.
+    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", halfPastLast), 60)).toBe(false);
+    // A 90-minute booking has to start an hour and a half before closing.
+    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", ninetyLatest), 90)).toBe(true);
+    // Any later and the 90 minutes cross closing — and, at 24:00, midnight,
+    // which is the case the end-of-day arithmetic gets wrong if it compares
+    // wall-clock strings instead of minutes.
+    expect(isWithinOpeningHours(clubWallTimeToInstant("2026-09-07", lastHour), 90)).toBe(false);
   });
 });
 

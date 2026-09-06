@@ -152,6 +152,20 @@
     outline: 2px solid #0066cc;
     outline-offset: 2px;
   }
+  /*
+     Take the double-tap-to-zoom gesture off anything meant to be pressed.
+     Safari holds a tap back for ~350ms in case a second one follows, so tapping
+     quickly around the court map dropped taps and felt jammed. Pinch-to-zoom is
+     untouched; only the double-tap shortcut on controls goes.
+  */
+  a,
+  button,
+  [role="button"],
+  label,
+  select,
+  summary {
+    touch-action: manipulation;
+  }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration: 0.01ms !important;

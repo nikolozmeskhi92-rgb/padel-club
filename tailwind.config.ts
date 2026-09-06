@@ -2,6 +2,13 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   darkMode: "class",
+  // Wrap every `hover:` utility in @media (hover: hover).
+  //
+  // On iOS a tap leaves :hover stuck on whatever you last touched, so blocks
+  // on the court map stayed tinted long after the finger had gone and several
+  // of them looked selected at once. A phone has no pointer to hover with;
+  // these styles were never meant for it.
+  future: { hoverOnlyWhenSupported: true },
   content: [
     "./app/**/*.{ts,tsx,mdx}",
     "./components/**/*.{ts,tsx}",
