@@ -14,6 +14,7 @@ import {
   STAFF_HORIZON_DAYS,
 } from "@/lib/time/club";
 import { getStaffUser } from "@/lib/auth/staff";
+import { getDayBookings } from "@/lib/availability";
 
 const BookingSchema = z.object({
   courtId: z.number().int().min(1).max(10),
@@ -234,28 +235,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "DATE_REQUIRED" }, { status: 400 });
   }
 
-  const supabase = createServiceRoleClient();
-  // `date` is a club-local calendar day, so its UTC bounds are not midnight-to-
-  // midnight Z. Asking for `${date}T00:00:00Z`..`T23:59:59Z` silently shifted
-  // the window by the club's offset and clipped the ends of the day.
-  const { start: dayStart, end: dayEnd } = clubDayBounds(date);
-
-  // `slot` is a tstzrange, so it has to be matched with the range OVERLAP
-  // operator. Comparing it to a timestamp (`.gte`/`.lt`) made Postgres try to
-  // read the timestamp as a range and fail with `malformed range literal`, so
-  // this endpoint always returned FETCH_FAILED and /book always fell back to
-  // its "couldn't load live availability" panel. Overlap is also the correct
-  // question to ask: show bookings that touch this day, not only ones that
-  // start inside it.
-  const { data, error } = await supabase
-    .from("court_bookings")
-    .select("id, court_id, slot, status")
-    .in("status", ["pending", "confirmed"])
-    .overlaps("slot", `[${dayStart.toISOString()},${dayEnd.toISOString()})`);
-
-  if (error) {
+  // The query itself lives in lib/availability so the booking page can run it
+  // during its own server render and hand the first day to the client already
+  // filled in, instead of the browser paying for a second round trip after
+  // hydration just to find out what is free today.
+  try {
+    return NextResponse.json({ bookings: await getDayBookings(date) });
+  } catch {
     return NextResponse.json({ error: "FETCH_FAILED" }, { status: 500 });
   }
-
-  return NextResponse.json({ bookings: data });
 }

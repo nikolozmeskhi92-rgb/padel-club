@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { addDays, format, isSameDay } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Check, AlertCircle, Droplets, Clock, RefreshCw, ChevronDown, Home } from "lucide-react";
@@ -78,15 +78,22 @@ type Step = "slot" | "extras" | "checkout" | "success";
 export function CourtBookingFlow({
   horizonDays = PUBLIC_HORIZON_DAYS,
   staffMode = false,
+  initialDateKey,
+  initialBookings,
 }: {
   horizonDays?: number;
   staffMode?: boolean;
+  /** Club day `initialBookings` describes, so a render that crosses midnight
+   *  cannot show yesterday's grid as today's. */
+  initialDateKey?: string;
+  /** Availability fetched during the server render; null if that query failed. */
+  initialBookings?: BookedSlot[] | null;
 } = {}) {
   const [date, setDate] = useState(new Date());
   const [selectedCourt, setSelectedCourt] = useState<number | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [duration, setDuration] = useState<60 | 90>(60);
-  const [booked, setBooked] = useState<BookedSlot[]>([]);
+  const [booked, setBooked] = useState<BookedSlot[]>(initialBookings ?? []);
   /**
    * Starts true so the server and the first client render agree.
    *
@@ -97,9 +104,49 @@ export function CourtBookingFlow({
    * availability keeps both passes identical, and there is nothing truthful to
    * show before that fetch anyway.
    */
-  const [loadingGrid, setLoadingGrid] = useState(true);
+  // False when the server already handed us today's grid: the first paint has
+  // real times on it, so there is no spinner to show and nothing to swap out.
+  const [loadingGrid, setLoadingGrid] = useState(
+    !(initialDateKey && initialBookings && initialDateKey === clubDateKey(new Date()))
+  );
   const [gridError, setGridError] = useState(false);
   const [gridReloadKey, setGridReloadKey] = useState(0);
+
+  /**
+   * Availability already fetched, by club date key.
+   *
+   * The endpoint takes 400-800ms — one hop for the rate-limit check and one for
+   * the query — and the day strip invites people to tap along it. Without a
+   * cache every tap paid that again, including tapping back to the day you were
+   * just on. A cached day paints immediately and revalidates behind the scenes;
+   * a booking made against a stale grid is still refused by the database's
+   * exclusion constraint, so the worst case is the message it already shows.
+   */
+  const availabilityCache = useRef<Map<string, BookedSlot[]>>(
+    new Map(initialDateKey && initialBookings ? [[initialDateKey, initialBookings]] : [])
+  );
+
+  /**
+   * Keeps whatever the customer is looking at where it is.
+   *
+   * Choosing a slot resizes the list above the map — a different period has a
+   * different number of rows, opening one row inserts the court picker, closing
+   * another removes it — and every one of those pushed the map up or down under
+   * the finger mid-tap. Safari has no `overflow-anchor`, so the compensation is
+   * done by hand: note where an element sits before the state change, and after
+   * layout scroll by however far it moved.
+   */
+  const anchor = useRef<{ el: HTMLElement; top: number } | null>(null);
+  const anchorTo = (el: HTMLElement | null | undefined) => {
+    if (el) anchor.current = { el, top: el.getBoundingClientRect().top };
+  };
+
+  // Heights of the two tall blocks, so a day change swaps content of the same
+  // size instead of collapsing the page and dropping it back.
+  const listBoxRef = useRef<HTMLDivElement>(null);
+  const listHeight = useRef(0);
+  const mapBoxRef = useRef<HTMLDivElement>(null);
+  const mapHeight = useRef(0);
   const [period, setPeriod] = useState<PeriodId>("evening");
   const [step, setStep] = useState<Step>("slot");
   const [equipment, setEquipment] = useState<Record<number, number>>({});
@@ -137,34 +184,86 @@ export function CourtBookingFlow({
   // court and only finds out at checkout. Failing loudly is the safer default.
   useEffect(() => {
     let cancelled = false;
-    setLoadingGrid(true);
-    setGridError(false);
+    const key = clubDateKey(date);
+    const cached = availabilityCache.current.get(key);
+
+    // A day already seen paints at once and is checked again in the background,
+    // so tapping back along the strip is instant instead of another round trip.
+    if (cached) {
+      setBooked(cached);
+      setGridError(false);
+      setLoadingGrid(false);
+    } else {
+      setLoadingGrid(true);
+      setGridError(false);
+    }
     setSelectedCourt(null);
     setSelectedTime(null);
 
-    fetch(`/api/bookings?date=${clubDateKey(date)}`)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`availability ${r.status}`);
-        return r.json();
-      })
-      .then((d) => {
-        if (cancelled) return;
-        if (!Array.isArray(d?.bookings)) throw new Error("malformed availability payload");
-        setBooked(d.bookings);
-      })
+    const load = (dateKey: string, apply: boolean) =>
+      fetch(`/api/bookings?date=${dateKey}`)
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`availability ${r.status}`);
+          return r.json();
+        })
+        .then((d) => {
+          if (!Array.isArray(d?.bookings)) throw new Error("malformed availability payload");
+          availabilityCache.current.set(dateKey, d.bookings);
+          if (apply && !cancelled) setBooked(d.bookings);
+        });
+
+    load(key, true)
       .catch(() => {
-        if (cancelled) return;
+        // A failed revalidation must not blank a grid that is already on screen
+        // and correct as of a moment ago.
+        if (cancelled || cached) return;
         setBooked([]);
         setGridError(true);
       })
       .finally(() => {
         if (!cancelled) setLoadingGrid(false);
+        // Warm the neighbours the day strip most likely goes to next. Idle work
+        // at 120 requests a minute of headroom, and it makes the next tap free.
+        if (!cancelled) {
+          for (const offset of [1, -1]) {
+            const neighbour = clubDateKey(addDays(date, offset));
+            if (!availabilityCache.current.has(neighbour)) load(neighbour, false).catch(() => {});
+          }
+        }
       });
 
     return () => {
       cancelled = true;
     };
   }, [clubDateKey(date), gridReloadKey]);
+
+  /**
+   * Undo whatever the last state change did to the scroll position.
+   *
+   * Runs after every render but only does something when a handler asked it to,
+   * and before the browser paints — so the block the customer was touching is
+   * already back where it was by the time the frame is drawn. "instant" matters:
+   * the page sets scroll-behavior: smooth globally, and an animated correction
+   * is the very lurch this exists to remove.
+   */
+  useLayoutEffect(() => {
+    const a = anchor.current;
+    anchor.current = null;
+    if (!a || !a.el.isConnected) return;
+    const delta = a.el.getBoundingClientRect().top - a.top;
+    if (Math.abs(delta) > 1) {
+      window.scrollBy({ top: delta, left: 0, behavior: "instant" as ScrollBehavior });
+    }
+  });
+
+  // Remember how tall each block was while it held real content, so the
+  // placeholder that replaces it during a day change is the same size and the
+  // page neither collapses nor springs back.
+  useLayoutEffect(() => {
+    if (loadingGrid) return;
+    if (listBoxRef.current) listHeight.current = listBoxRef.current.offsetHeight;
+    if (mapBoxRef.current) mapHeight.current = mapBoxRef.current.offsetHeight;
+  });
 
   function isSlotTaken(courtId: number, time: string) {
     const slotStart = slotStartDate(time);
@@ -456,7 +555,10 @@ export function CourtBookingFlow({
         // sat on top of the last rows of the court map: tapping a court down
         // there hit the bar instead of the block, and nothing happened. Give the
         // page the bar's height back so every block stays reachable.
-        selectedCourt && selectedTime && step === "slot" && "pb-32"
+        // Reserved for the whole step, not only while the bar is up: toggling
+        // the padding moved the page every time a selection was made or
+        // dropped, which is the jump you feel at the moment of tapping.
+        step === "slot" && "pb-32"
       )}
     >
       <h1 className="font-heading text-3xl font-extrabold uppercase tracking-tight text-ink md:text-4xl">Book a court</h1>
@@ -552,7 +654,17 @@ export function CourtBookingFlow({
       {!gridError && (
         <div className="mt-8">
           {/* Period tabs — the whole day in three taps instead of a 30-column scroll */}
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Time of day">
+          {/*
+            A fixed three-up grid, not a wrapping row.
+
+            The sub-label under each tab changes with the day — "13 slots open",
+            "Fully booked", "Passed" — and a wider one was enough to push
+            Evening onto a second line. The tab row grew by its own height, and
+            everything under it, list and map included, dropped 66px. That was
+            the whole of the day-switch jump. Three equal columns cannot reflow,
+            and equal thumb-sized targets are the better phone layout anyway.
+          */}
+          <div className="grid grid-cols-3 gap-2" role="tablist" aria-label="Time of day">
             {PERIODS.map((p) => {
               const count = freeByPeriod[p.id];
               const active = period === p.id;
@@ -562,13 +674,14 @@ export function CourtBookingFlow({
                   role="tab"
                   aria-selected={active}
                   disabled={!loadingGrid && count === 0}
-                  onClick={() => {
+                  onClick={(e) => {
+                    anchorTo(e.currentTarget.closest("div"));
                     setPeriod(p.id);
                     setSelectedTime(null);
                     setSelectedCourt(null);
                   }}
                   className={cn(
-                    "flex flex-col items-start rounded-court border px-4 py-2.5 text-left transition-colors",
+                    "flex flex-col items-start rounded-court border px-3 py-2.5 text-left transition-colors sm:px-4",
                     active
                       ? "border-brand bg-brand text-white"
                       : "border-line bg-surface-base text-ink hover:border-ink-muted/40",
@@ -590,8 +703,17 @@ export function CourtBookingFlow({
             })}
           </div>
 
+          {/* Six skeleton rows stood in for anything from four to thirteen real
+              ones, so the page grew or shrank by hundreds of pixels the moment
+              a day finished loading. The placeholder now holds the height the
+              list had a moment ago. */}
+          <div
+            ref={listBoxRef}
+            className="mt-5"
+            style={loadingGrid && listHeight.current ? { minHeight: listHeight.current } : undefined}
+          >
           {loadingGrid ? (
-            <div className="mt-5 space-y-2" aria-busy="true">
+            <div className="space-y-2" aria-busy="true">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="h-16 animate-pulse rounded-court bg-surface-muted" />
               ))}
@@ -605,21 +727,47 @@ export function CourtBookingFlow({
               selectedCourt={selectedCourt}
               priceFor={basePriceFor}
               isPeak={(t) => isPeakHour(slotStartDate(t))}
+              onBeforeToggle={anchorTo}
               onPickTime={(t) => {
-                setSelectedTime(selectedTime === t ? null : t);
-                setSelectedCourt(null);
+                if (selectedTime === t) {
+                  setSelectedTime(null);
+                  setSelectedCourt(null);
+                  return;
+                }
+                setSelectedTime(t);
+                // Keep the court if it is free at the new time as well.
+                //
+                // Clearing it unconditionally is what made this take two taps:
+                // picking another time dropped the court, the summary bar slid
+                // away, and the booking had to be rebuilt from a court chip
+                // before Continue came back. Moving an existing choice an hour
+                // later is one tap now, and only a court that genuinely cannot
+                // take the new slot is given up.
+                setSelectedCourt((court) =>
+                  court !== null && isCourtFree(court, t, duration) ? court : null
+                );
               }}
               onPickCourt={setSelectedCourt}
             />
           )}
+          </div>
 
           {/* The same grid the desk looks at. The list above answers "what can I
               book at seven"; this answers "when is anything free at all", which
               is the question people actually arrive with. Clicking a free block
               picks it, so seeing the gap and taking it is one gesture. */}
-          {!loadingGrid && (
+          {/* The map used to be unmounted entirely while a day loaded, taking
+              ~500px out of the page and putting it back a moment later. It
+              keeps its footprint now. */}
+          <div ref={mapBoxRef} className="mt-8">
+          {loadingGrid ? (
+            <div
+              className="animate-pulse rounded-court border border-line bg-surface-base"
+              style={{ height: mapHeight.current || 420 }}
+              aria-busy="true"
+            />
+          ) : (
             <CourtMap
-              className="mt-8"
               title="Live court map"
               courts={COURTS}
               bookings={mapBookings}
@@ -645,6 +793,10 @@ export function CourtBookingFlow({
                 // Only offer what the flow itself would accept: a full free run
                 // of `duration`, inside opening hours, not already gone.
                 if (!isCourtFree(courtId, time, duration) || isPast(time)) return;
+                // Moving the list above to the matching period changes its
+                // height, which used to shove the map — the thing being tapped —
+                // up or down the screen. Hold the map still across the change.
+                anchorTo(mapBoxRef.current);
                 const p = PERIODS.find((x) => toMinutes(time) >= x.from && toMinutes(time) < x.to);
                 if (p) setPeriod(p.id);
                 setSelectedTime(time);
@@ -652,6 +804,7 @@ export function CourtBookingFlow({
               }}
             />
           )}
+          </div>
         </div>
       )}
 
@@ -836,6 +989,7 @@ function TimeList({
   isPeak,
   onPickTime,
   onPickCourt,
+  onBeforeToggle,
 }: {
   period: PeriodId;
   availability: Map<string, CourtRow[]>;
@@ -846,6 +1000,8 @@ function TimeList({
   isPeak: (time: string) => boolean;
   onPickTime: (time: string) => void;
   onPickCourt: (courtId: number) => void;
+  /** Called with the row about to move, so the page can hold it still. */
+  onBeforeToggle?: (el: HTMLElement | null) => void;
 }) {
   const bounds = PERIODS.find((p) => p.id === period)!;
   const times = Array.from(availability.keys()).filter((t) => {
@@ -855,7 +1011,7 @@ function TimeList({
 
   if (times.length === 0) {
     return (
-      <p className="mt-5 rounded-court border border-line bg-surface-base px-5 py-8 text-center text-sm text-ink-muted">
+      <p className="rounded-court border border-line bg-surface-base px-5 py-8 text-center text-sm text-ink-muted">
         Nothing left this {bounds.label.toLowerCase()} — try another part of the day, or
         pick tomorrow above.
       </p>
@@ -863,7 +1019,7 @@ function TimeList({
   }
 
   return (
-    <ul className="mt-5 divide-y divide-line overflow-hidden rounded-court border border-line bg-surface-base">
+    <ul className="divide-y divide-line overflow-hidden rounded-court border border-line bg-surface-base">
       {times.map((time) => {
         const free = availability.get(time) ?? [];
         const soldOut = free.length === 0;
@@ -875,7 +1031,13 @@ function TimeList({
             <button
               disabled={soldOut}
               aria-expanded={open}
-              onClick={() => onPickTime(time)}
+              onClick={(e) => {
+                // Opening this row inserts the court picker and closes whichever
+                // row was open — which, if that row was above this one, dragged
+                // this one out from under the finger. Anchor it first.
+                onBeforeToggle?.(e.currentTarget.closest("li"));
+                onPickTime(time);
+              }}
               className={cn(
                 "flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors sm:gap-5 sm:px-5",
                 soldOut ? "cursor-not-allowed opacity-50" : "hover:bg-surface-muted",
