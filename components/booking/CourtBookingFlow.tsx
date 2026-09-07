@@ -737,7 +737,9 @@ export function CourtBookingFlow({
         // Reserved for the whole step, not only while the bar is up: toggling
         // the padding moved the page every time a selection was made or
         // dropped, which is the jump you feel at the moment of tapping.
-        step === "slot" && "pb-32"
+        // Room for the floating action bar plus the gap it now sits above,
+        // so the last row of the day is never parked underneath it.
+        step === "slot" && "pb-40"
       )}
     >
       <h1 className="font-heading text-3xl font-extrabold uppercase tracking-tight text-ink md:text-4xl">Book a court</h1>
@@ -1007,8 +1009,28 @@ export function CourtBookingFlow({
         nothing shifts either way.
       */}
       {step === "slot" && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface-base pb-[env(safe-area-inset-bottom)]">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-7 py-3.5 sm:px-8 sm:py-4">
+        /*
+          The bar floats clear of the bottom edge rather than sitting on it.
+
+          Flush against the bottom, Continue was inside the band iOS Safari
+          keeps for its own collapsed toolbar, and the club reported the
+          symptom exactly: "the first press just brings the browser's header
+          and footer back, and only then can I continue". That first tap was
+          never reaching the page — Safari took it to expand its chrome. The
+          same tap on a bar that ends 20px higher lands on the button.
+
+          The gap is written against env(safe-area-inset-bottom), which is 0
+          while the toolbars are showing and grows to the home-indicator inset
+          once they collapse — so the clearance appears exactly when the
+          collapsed toolbar is there to be avoided, and the bar does not float
+          pointlessly high the rest of the time.
+
+          pointer-events-none on the wrapper, auto on the bar: the wrapper
+          spans the full width, and without that it would swallow taps on the
+          court map showing through beside the bar.
+        */
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+          <div className="pointer-events-auto mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-court border border-line bg-surface-base px-5 py-3.5 shadow-[0_6px_24px_rgba(0,26,51,0.16)] sm:px-6 sm:py-4">
             {selectedCourt && selectedTime ? (
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-ink">
@@ -1136,7 +1158,14 @@ export function CourtBookingFlow({
                 attached to the screen rather than floating over a moving page.
                 min-h-0 is what lets it actually scroll inside a flex column.
               */}
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+              {/*
+                The generous bottom padding is for the same reason the action
+                bar floats: the last thing in here is "Continue to checkout" or
+                "Reserve", and a button sitting on the bottom edge of an iPhone
+                is inside the band Safari keeps for its collapsed toolbar, where
+                the first tap only brings the toolbar back.
+              */}
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-5 pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
               {step === "extras" && (
                 <>
                   <p className="text-sm text-ink-muted/80">Optional — skip if you're all set.</p>
