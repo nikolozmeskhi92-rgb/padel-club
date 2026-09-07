@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { checkPassword, MIN_PASSWORD_LENGTH } from "@/lib/auth/password";
+import { authErrorMessage } from "@/lib/auth/errors";
 import { AuthLink, AuthShell, PasswordField, SubmitButton } from "@/components/auth/AuthShell";
 
 /**
@@ -61,7 +62,7 @@ export default function ResetPasswordPage() {
     setLoading(false);
 
     if (updateError) {
-      setError(updateError.message);
+      setError(authErrorMessage(updateError));
       return;
     }
     setDone(true);

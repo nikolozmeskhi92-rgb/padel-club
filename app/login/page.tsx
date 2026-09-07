@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { authErrorMessage } from "@/lib/auth/errors";
 import { Loader2 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 import {
@@ -130,7 +131,7 @@ function LoginForm() {
       },
     });
     if (resendError) {
-      setError(resendError.message);
+      setError(authErrorMessage(resendError));
       return;
     }
     setResent(true);

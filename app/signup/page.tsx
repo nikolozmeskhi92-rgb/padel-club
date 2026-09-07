@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { MailCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { checkPassword, MIN_PASSWORD_LENGTH } from "@/lib/auth/password";
+import { authErrorMessage, isEmailRateLimit } from "@/lib/auth/errors";
 import {
   AuthField,
   AuthLink,
@@ -68,7 +69,7 @@ function SignUpForm() {
     setLoading(false);
 
     if (signUpError) {
-      setError(signUpError.message);
+      setError(authErrorMessage(signUpError));
       return;
     }
 
@@ -181,7 +182,10 @@ function CheckYourInbox({ email, redirect }: { email: string; redirect: string |
       },
     });
     if (resendError) {
-      setError(resendError.message);
+      setError(authErrorMessage(resendError));
+      // A quota refusal is not the person's fault and pressing the button
+      // again immediately cannot help, so the cooldown starts anyway.
+      if (isEmailRateLimit(resendError)) setCooldown(60);
       return;
     }
     setResent(true);

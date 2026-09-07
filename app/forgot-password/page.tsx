@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { MailCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { authErrorMessage, isEmailRateLimit } from "@/lib/auth/errors";
 import { AuthField, AuthLink, AuthShell, SubmitButton } from "@/components/auth/AuthShell";
 
 export default function ForgotPasswordPage() {
@@ -35,11 +36,14 @@ export default function ForgotPasswordPage() {
       not what it found, and a person who mistypes their address finds out the
       ordinary way: no email arrives.
 
-      A genuine failure — the network, or Supabase being unreachable — is still
-      reported, because that is about us and not about who has an account.
+      Two failures are still reported, because neither says anything about who
+      has an account: the network being down, and the mail quota being spent.
+      The second one is the important one — telling someone their link is on
+      its way when the provider has just refused to send it is the version of
+      this page that wastes an afternoon.
     */
-    if (resetError && /network|fetch|unreachable/i.test(resetError.message)) {
-      setError("Couldn't reach the server. Check your connection and try again.");
+    if (resetError && (isEmailRateLimit(resetError) || /network|fetch|unreachable/i.test(resetError.message))) {
+      setError(authErrorMessage(resetError));
       return;
     }
     setSent(true);
