@@ -12,7 +12,10 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronLeft,
+  CreditCard,
   Home,
+  Landmark,
+  Wallet,
   X,
 } from "lucide-react";
 import { isPeakHour, formatMoney } from "@/lib/pricing";
@@ -80,7 +83,60 @@ const PERIODS = [
 
 type PeriodId = (typeof PERIODS)[number]["id"];
 
-type Step = "slot" | "extras" | "checkout" | "success";
+type Step = "slot" | "extras" | "checkout" | "payment" | "success";
+
+/**
+ * How the customer says they want to pay.
+ *
+ * Only "club" settles anything today. Card and PayPal are drawn, labelled
+ * "coming soon", and simulated — the club has no provider wired up, and a
+ * button that looks like it takes money and does not is the single worst
+ * thing this page could do. An earlier version of this site had exactly that:
+ * TBC / BOG / PayPal buttons that charged nothing while the booking was
+ * written `unpaid` and the customer believed they had paid.
+ */
+type PayMethod = "card" | "paypal" | "club";
+
+/**
+ * The three ways to pay, in the order they are offered.
+ *
+ * Named in words rather than drawn as bank logos: TBC's and Bank of Georgia's
+ * marks belong to them, and the club will be given the correct artwork as part
+ * of the merchant agreement that makes these buttons real. Until then the
+ * names carry it, and the badge says what is actually true.
+ *
+ * "Pay at the club" is last but selected by default — last because the two
+ * that people look for first should be where they look, default because it is
+ * the only one that takes a booking today.
+ */
+const PAY_METHODS: {
+  id: PayMethod;
+  name: string;
+  hint: string;
+  icon: typeof CreditCard;
+  comingSoon?: boolean;
+}[] = [
+  {
+    id: "card",
+    name: "Card — TBC or Bank of Georgia",
+    hint: "Visa and Mastercard issued in Georgia",
+    icon: CreditCard,
+    comingSoon: true,
+  },
+  {
+    id: "paypal",
+    name: "PayPal",
+    hint: "Useful if you are paying from abroad",
+    icon: Wallet,
+    comingSoon: true,
+  },
+  {
+    id: "club",
+    name: "Pay at the club",
+    hint: "Cash or card terminal at reception",
+    icon: Landmark,
+  },
+];
 
 /**
  * `horizonDays` is how far ahead this caller may book. The public gets a week
@@ -175,6 +231,19 @@ export function CourtBookingFlow({
   const [step, setStep] = useState<Step>("slot");
   const [oauthLoading, setOauthLoading] = useState(false);
 
+  /** Pay at the club is the default because it is the only one that works. */
+  const [payMethod, setPayMethod] = useState<PayMethod>("club");
+  const [simulating, setSimulating] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // One timer, cleared on every new message, so a second toast does not inherit
+  // the remains of the first one's clock and vanish early.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   /**
    * The sheet is a screen, so the device's Back button has to treat it like one.
    *
@@ -190,7 +259,7 @@ export function CourtBookingFlow({
    */
   const sheetDepth = useRef(0);
 
-  function openSheet(next: "extras" | "checkout") {
+  function openSheet(next: "extras" | "checkout" | "payment") {
     if (typeof window !== "undefined") {
       window.history.pushState({ lukiSheet: next }, "");
       sheetDepth.current += 1;
@@ -209,7 +278,7 @@ export function CourtBookingFlow({
   /** One screen back inside the sheet. Driven through history so Back agrees. */
   function sheetBack() {
     if (sheetDepth.current > 0 && typeof window !== "undefined") window.history.back();
-    else setStep("extras");
+    else setStep((s) => (s === "payment" ? "checkout" : "extras"));
   }
 
   useEffect(() => {
@@ -218,7 +287,9 @@ export function CourtBookingFlow({
       // our own unwinding — or a navigation that has nothing to do with us.
       if (sheetDepth.current === 0) return;
       sheetDepth.current -= 1;
-      setStep((s) => (s === "checkout" ? "extras" : "slot"));
+      setStep((s) =>
+        s === "payment" ? "checkout" : s === "checkout" ? "extras" : "slot"
+      );
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") closeSheet();
@@ -241,7 +312,7 @@ export function CourtBookingFlow({
    * that got the scroll anchoring written in the first place.
    */
   useEffect(() => {
-    const open = step === "extras" || step === "checkout";
+    const open = step === "extras" || step === "checkout" || step === "payment";
     if (!open) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -714,6 +785,40 @@ export function CourtBookingFlow({
     }
   }
 
+  /**
+   * The one button at the bottom of the payment step.
+   *
+   * "Pay at the club" is not a demo — it runs the real booking, writes the row,
+   * sends the confirmation and lands on the success screen, exactly as the
+   * Reserve button did before this step existed. Card and PayPal have no
+   * provider behind them, so they wait a beat and say so.
+   *
+   * The simulated paths deliberately do NOT close the sheet or clear the slot.
+   * A customer who tries the card button and finds their court gone has been
+   * punished for tapping the thing the page offered them; leaving them where
+   * they are, with "Pay at the club" one tap away, is the difference between a
+   * demo and a hole in a live booking funnel.
+   */
+  async function payAndBook() {
+    setError(null);
+
+    if (payMethod === "club") {
+      await submitBooking();
+      return;
+    }
+
+    setSimulating(true);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    setSimulating(false);
+    // Short on purpose. The toast sits above the sheet, and a paragraph there
+    // covers the very controls the customer needs next.
+    setToast(
+      payMethod === "card"
+        ? "TBC / BOG — simulation only, no card was charged. Choose “Pay at the club” to confirm."
+        : "PayPal — simulation only, nothing was charged. Choose “Pay at the club” to confirm."
+    );
+  }
+
   if (step === "success" && bookingCode) {
     return (
       <SuccessPanel
@@ -1085,7 +1190,7 @@ export function CourtBookingFlow({
         scrolls, so the way out never scrolls off the top.
       */}
       <AnimatePresence>
-        {(step === "extras" || step === "checkout") && (
+        {(step === "extras" || step === "checkout" || step === "payment") && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -1121,11 +1226,11 @@ export function CourtBookingFlow({
               </div>
 
               <div className="flex shrink-0 items-center gap-1 border-b border-line px-2 py-2 sm:px-3">
-                {step === "checkout" ? (
+                {step !== "extras" ? (
                   <button
                     type="button"
                     onClick={sheetBack}
-                    aria-label="Back to extras"
+                    aria-label={step === "payment" ? "Back to your details" : "Back to extras"}
                     className="flex h-11 w-11 items-center justify-center rounded-court text-ink-muted active:bg-surface-muted"
                   >
                     <ChevronLeft className="h-5 w-5" />
@@ -1139,7 +1244,7 @@ export function CourtBookingFlow({
                   id="sheet-title"
                   className="min-w-0 flex-1 truncate text-center font-heading text-base font-bold text-ink"
                 >
-                  {step === "extras" ? "Anything else?" : "Checkout"}
+                  {step === "extras" ? "Anything else?" : step === "checkout" ? "Your details" : "Payment"}
                 </h2>
 
                 <button
@@ -1285,15 +1390,6 @@ export function CourtBookingFlow({
                       className="w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 text-sm text-ink outline-none focus:border-brand"
                     />
 
-                    {/*
-                      BOG / TBC / PayPal buttons used to sit here and charged
-                      nothing — no /api/checkout route exists, so the booking
-                      was stored `unpaid` while the customer believed they had
-                      paid. Hidden until a provider is really wired up.
-                    */}
-                    <p className="mt-2 rounded-court bg-surface-muted px-4 py-3 text-xs text-ink-muted">
-                      Pay at the club when you arrive. We&apos;ll hold the court for you.
-                    </p>
                   </div>
 
                   {error && (
@@ -1303,20 +1399,164 @@ export function CourtBookingFlow({
                   )}
 
                   <button
-                    disabled={submitting || !guest.name || !guest.email || !guest.phone}
-                    onClick={submitBooking}
-                    className="mt-6 flex w-full items-center justify-center gap-2 rounded-court bg-brand py-3 text-sm font-semibold text-white disabled:opacity-50"
+                    disabled={!guest.name || !guest.email || !guest.phone}
+                    onClick={() => openSheet("payment")}
+                    className="mt-6 w-full rounded-court bg-brand py-3 text-sm font-semibold text-white disabled:opacity-50"
                   >
-                    {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Reserve · {formatMoney(price)}
+                    Continue · {formatMoney(price)}
                   </button>
-                  <p className="mt-2 text-center text-[11px] text-ink-muted/70">
-                    Sandbox mode — no real charge will be made.
+                </>
+              )}
+
+              {step === "payment" && (
+                <>
+                  {/*
+                    What is being bought, before how it is paid for. The
+                    customer has been through three screens by now and the
+                    total has changed twice — once for the length, once for
+                    anything added — so it is restated here rather than
+                    remembered.
+                  */}
+                  <dl className="rounded-court border border-line bg-surface-muted px-4 py-3 text-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-ink-muted">Court</dt>
+                      <dd className="font-semibold text-ink">Court {selectedCourt}</dd>
+                    </div>
+                    <div className="mt-1.5 flex items-baseline justify-between gap-3">
+                      <dt className="text-ink-muted">When</dt>
+                      <dd className="text-right font-semibold text-ink">
+                        {format(date, "EEE d MMM")} · {selectedTime}
+                      </dd>
+                    </div>
+                    <div className="mt-1.5 flex items-baseline justify-between gap-3">
+                      <dt className="text-ink-muted">Length</dt>
+                      <dd className="font-semibold text-ink">{duration} min</dd>
+                    </div>
+                    {chosenWash && (
+                      <div className="mt-1.5 flex items-baseline justify-between gap-3">
+                        <dt className="text-ink-muted">Car wash</dt>
+                        <dd className="text-right font-semibold text-ink">
+                          {chosenWash.service.label} · Bay {chosenWash.bayId} ·{" "}
+                          {clubHHMM(chosenWash.start)}
+                        </dd>
+                      </div>
+                    )}
+                    <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-line pt-3">
+                      <dt className="font-semibold text-ink">Total</dt>
+                      <dd className="font-heading text-lg font-bold text-ink">{formatMoney(price)}</dd>
+                    </div>
+                  </dl>
+
+                  {/*
+                    A radiogroup rather than three buttons: one thing is chosen
+                    out of three, arrow keys should move between them, and a
+                    screen reader should say "2 of 3" rather than reading three
+                    unrelated buttons.
+                  */}
+                  <div
+                    role="radiogroup"
+                    aria-label="How you'd like to pay"
+                    className="mt-5 space-y-2.5"
+                  >
+                    {PAY_METHODS.map((m) => {
+                      const Icon = m.icon;
+                      const active = payMethod === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => setPayMethod(m.id)}
+                          className={cn(
+                            "flex w-full items-center gap-3 rounded-court border px-4 py-3 text-left transition-colors",
+                            active
+                              ? "border-brand bg-brand/5 ring-1 ring-brand"
+                              : "border-line bg-surface-base active:bg-surface-muted"
+                          )}
+                        >
+                          <Icon
+                            className={cn("h-5 w-5 shrink-0", active ? "text-brand" : "text-ink-muted")}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="text-sm font-semibold text-ink">{m.name}</span>
+                              {m.comingSoon && (
+                                <span className="rounded-full bg-peak/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                                  Coming soon
+                                </span>
+                              )}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-ink-muted/90">{m.hint}</span>
+                          </span>
+                          {/*
+                            A filled dot, not a tick: a tick reads as "done",
+                            and nothing here is done until the button below is
+                            pressed.
+                          */}
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              "h-4 w-4 shrink-0 rounded-full border-2",
+                              active ? "border-brand bg-brand" : "border-line"
+                            )}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {error && (
+                    <div className="mt-4 flex items-center gap-2 rounded-court border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                      <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+                    </div>
+                  )}
+
+                  <button
+                    disabled={submitting || simulating}
+                    onClick={payAndBook}
+                    className="mt-6 flex w-full items-center justify-center gap-2 rounded-court bg-brand py-3.5 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {(submitting || simulating) && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {payMethod === "club"
+                      ? `Confirm booking · ${formatMoney(price)}`
+                      : "Continue to payment"}
+                  </button>
+
+                  <p className="mt-2.5 text-center text-[11px] leading-relaxed text-ink-muted/80">
+                    {payMethod === "club"
+                      ? "Nothing is charged now. We hold the court and you settle it at reception."
+                      : "Online payment isn't live yet — this button runs a simulation and takes no money."}
                   </p>
                 </>
               )}
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/*
+        The toast sits at the top, not the bottom. The bottom of an iPhone
+        screen belongs to Safari's collapsed toolbar — the same band that was
+        eating the first tap on Continue — and a message that lands half under
+        the browser's own chrome is a message nobody reads.
+
+        z-50 to clear the sheet at z-40, since the thing it is reporting on
+        happened inside the sheet and the sheet stays open.
+      */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="status"
+            aria-live="polite"
+            onClick={() => setToast(null)}
+            className="fixed inset-x-4 top-[calc(env(safe-area-inset-top)+1rem)] z-50 mx-auto max-w-md cursor-pointer rounded-court bg-ink px-4 py-3 text-sm leading-snug text-white shadow-[0_8px_28px_rgba(0,26,51,0.28)]"
+          >
+            {toast}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1511,11 +1751,17 @@ function SuccessPanel({
         nothing is sent, so the customer was told to check an inbox that would
         stay empty — and the booking code on this screen is the only copy they
         have. Say which of the two actually happened.
+
+        It also promised a QR check-in code. The confirmation email carries no
+        image on purpose — reception looks a booking up by name, phone or code,
+        and a picture is the part most likely to be blocked or simply not
+        loaded on the phone somebody is holding at the desk — so the customer
+        went looking for a QR that was never sent.
       */}
       <p className="mt-2 text-ink-muted">
         Code <span className="font-mono text-brand">{bookingCode}</span>
         {emailSent ? (
-          <> — a confirmation with your QR check-in code was sent to {email}.</>
+          <> — a confirmation was sent to {email}.</>
         ) : (
           <> — write this down, it is what you check in with.</>
         )}
