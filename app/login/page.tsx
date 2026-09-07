@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
-import { FaFacebookF } from "react-icons/fa6";
 
 // useSearchParams() opts a component out of static prerendering, so the form
 // lives in its own component behind a Suspense boundary. Without it, `next build`
@@ -129,23 +128,14 @@ function LoginForm() {
           </span>
           Continue with Google
         </button>
-        <button
-          type="button"
-          onClick={() => signInWith("facebook")}
-          disabled={oauthLoading !== null}
-          className="relative flex w-full items-center justify-center rounded-court border border-line bg-surface-base py-3 text-sm font-semibold text-ink transition-colors hover:border-ink-muted/40 disabled:opacity-50"
-        >
-          <span className="absolute left-4 flex h-5 w-5 items-center justify-center">
-            {oauthLoading === "facebook" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              // Meta's own blue, on their own mark. Everything else on this
-              // button stays in the club's palette.
-              <FaFacebookF className="h-[18px] w-[18px] text-[#1877F2]" />
-            )}
-          </span>
-          Continue with Facebook
-        </button>
+        {/*
+          Facebook is not offered. The provider is not enabled — Meta wants
+          business verification and app review before anyone outside a tester
+          list can use it — so the button did nothing but fail. Offering a way
+          in that cannot let anyone in is worse than showing one option that
+          works. The provider branch below still handles it, so putting the
+          button back is a few lines once the Meta side is approved.
+        */}
       </div>
 
       <div className="my-6 flex items-center gap-3">

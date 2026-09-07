@@ -20,6 +20,8 @@ import { CourtMap, type CourtMapBooking } from "@/components/courts/CourtMap";
 import { useGuestIdentity } from "@/lib/hooks/useGuestIdentity";
 import { MonthPicker } from "@/components/booking/MonthPicker";
 import { CLUB_PHONE } from "@/lib/club";
+import { FcGoogle } from "react-icons/fc";
+import { createClient } from "@/lib/supabase/client";
 
 type CourtRow = { id: number; name: string; indoor: boolean };
 type BookedSlot = { court_id: number; slot: string; status: string };
@@ -122,6 +124,17 @@ export function CourtBookingFlow({
    * a booking made against a stale grid is still refused by the database's
    * exclusion constraint, so the worst case is the message it already shows.
    */
+  const firstGridLoad = useRef(true);
+  /**
+   * Set when a selection has just been restored from the return URL.
+   *
+   * Restoring also sets the date, and the date is what the availability effect
+   * keys on — so it re-ran and cleared the very selection that had just been
+   * put back. The customer came home from Google to a checkout screen quoting
+   * zero. This says: the next load is for a day we already know about, leave
+   * the choice alone.
+   */
+  const preserveSelection = useRef(false);
   const availabilityCache = useRef<Map<string, BookedSlot[]>>(
     new Map(initialDateKey && initialBookings ? [[initialDateKey, initialBookings]] : [])
   );
@@ -149,6 +162,63 @@ export function CourtBookingFlow({
   const mapHeight = useRef(0);
   const [period, setPeriod] = useState<PeriodId>("evening");
   const [step, setStep] = useState<Step>("slot");
+  const [oauthLoading, setOauthLoading] = useState(false);
+
+  /**
+   * Sign in from checkout without losing the booking.
+   *
+   * OAuth leaves the site entirely, so anything held only in React state is
+   * gone by the time the customer comes back. The choice already made is
+   * written into the return URL instead — day, time, court, length — and read
+   * back on mount, landing them on the checkout step with the same slot and
+   * their details now filled in from the account. Query parameters rather than
+   * storage: they survive the round trip, they survive a cold tab, and you can
+   * see what went wrong by reading the address bar.
+   */
+  useEffect(() => {
+    if (staffMode || typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("resume") !== "1") return;
+    const t = q.get("t");
+    const c = Number(q.get("c"));
+    const m = Number(q.get("m"));
+    const d = q.get("d");
+    if (d) {
+      const [y, mo, day] = d.split("-").map(Number);
+      if (y && mo && day) setDate(new Date(y, mo - 1, day, 12));
+    }
+    if (t) setSelectedTime(t);
+    if (c) setSelectedCourt(c);
+    if (m === 60 || m === 90) setDuration(m);
+    if (t && c) {
+      preserveSelection.current = true;
+      setStep("checkout");
+    }
+    // Leave the address bar clean so a refresh does not re-trigger this.
+    window.history.replaceState(null, "", window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function signInFromCheckout() {
+    if (!selectedTime || !selectedCourt) return;
+    setOauthLoading(true);
+    const back = new URL("/book", window.location.origin);
+    back.searchParams.set("resume", "1");
+    back.searchParams.set("d", clubDateKey(date));
+    back.searchParams.set("t", selectedTime);
+    back.searchParams.set("c", String(selectedCourt));
+    back.searchParams.set("m", String(duration));
+
+    const callback = new URL("/auth/callback", window.location.origin);
+    callback.searchParams.set("next", back.pathname + back.search);
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: callback.toString() },
+    });
+    if (error) setOauthLoading(false);
+  }
   const [equipment, setEquipment] = useState<Record<number, number>>({});
   // Checkout fills itself: the account's email, and whatever name and phone
   // this person last gave us. See lib/hooks/useGuestIdentity.
@@ -197,8 +267,22 @@ export function CourtBookingFlow({
       setLoadingGrid(true);
       setGridError(false);
     }
-    setSelectedCourt(null);
-    setSelectedTime(null);
+    // Only when the day actually changes. On the very first run this used to
+    // wipe a selection that had just been restored from the return URL after a
+    // Google sign-in, which is how the customer came back to a checkout screen
+    // quoting zero.
+    if (firstGridLoad.current) {
+      // Mount. Nothing to clear, and clearing would undo a restore that has
+      // already run — the effects above this one go first.
+      firstGridLoad.current = false;
+    } else if (preserveSelection.current) {
+      // The day changed because a restore set it, not because anyone tapped
+      // the strip. Spend the flag here, not on the mount run.
+      preserveSelection.current = false;
+    } else {
+      setSelectedCourt(null);
+      setSelectedTime(null);
+    }
 
     const load = (dateKey: string, apply: boolean) =>
       fetch(`/api/bookings?date=${dateKey}`)
@@ -793,12 +877,12 @@ export function CourtBookingFlow({
                 // Only offer what the flow itself would accept: a full free run
                 // of `duration`, inside opening hours, not already gone.
                 if (!isCourtFree(courtId, time, duration) || isPast(time)) return;
-                // Moving the list above to the matching period changes its
-                // height, which used to shove the map — the thing being tapped —
-                // up or down the screen. Hold the map still across the change.
-                anchorTo(mapBoxRef.current);
-                const p = PERIODS.find((x) => toMinutes(time) >= x.from && toMinutes(time) < x.to);
-                if (p) setPeriod(p.id);
+                // Deliberately does NOT move the list above to the matching
+                // period. Doing so resized it, which shoved the map — the thing
+                // under the finger — and a tap that starts on one element and
+                // ends on another is a tap the browser throws away. Nothing
+                // needs the two to agree: the choice is shown on the map itself
+                // and spelled out in the bar at the bottom of the screen.
                 setSelectedTime(time);
                 setSelectedCourt(courtId);
               }}
@@ -809,32 +893,55 @@ export function CourtBookingFlow({
       )}
 
 
-      {/* Sticky summary bar */}
-      <AnimatePresence>
-        {selectedCourt && selectedTime && step === "slot" && (
-          <motion.div
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
-          >
-            <div className="mx-auto flex max-w-5xl items-center justify-between px-7 sm:px-8 py-4">
-              <div>
-                <p className="text-sm font-semibold text-ink">
+      {/*
+        The action bar is always here, never animated, never blurred.
+
+        It used to mount on selection and slide up 80px, over a backdrop blur.
+        On iOS that is two well-known ways to lose a tap: Safari can keep
+        hit-testing an element at the position it animated *from* until the next
+        repaint, and a backdrop-filter on a fixed layer composites separately
+        from the layer that receives touches. Either way the first press on
+        Continue went nowhere and the second one worked — which is exactly what
+        it did.
+
+        A bar that is present for the whole step cannot have a stale hit rect,
+        because it never moves. Before a slot is chosen it says what to do and
+        the button is disabled, which is also the clearer state to be in: the
+        action is visible from the start instead of appearing once you have
+        guessed the right gesture. The page already reserves its height, so
+        nothing shifts either way.
+      */}
+      {step === "slot" && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface-base pb-[env(safe-area-inset-bottom)]">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-7 py-3.5 sm:px-8 sm:py-4">
+            {selectedCourt && selectedTime ? (
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">
                   Court {selectedCourt} · {format(date, "EEE MMM d")} · {selectedTime}
                 </p>
                 <p className="text-xs text-ink-muted/80">{duration} min · {formatMoney(price)}</p>
               </div>
-              <button
-                onClick={() => setStep("extras")}
-                className="rounded-court bg-brand px-5 py-2.5 text-sm font-semibold text-white"
-              >
-                Continue
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            ) : (
+              <p className="text-sm text-ink-muted">
+                Pick a time to continue
+              </p>
+            )}
+            <button
+              type="button"
+              disabled={!selectedCourt || !selectedTime}
+              onClick={() => setStep("extras")}
+              className={cn(
+                "shrink-0 rounded-court px-5 py-3 text-sm font-semibold transition-colors",
+                selectedCourt && selectedTime
+                  ? "bg-brand text-white active:bg-brand-hover"
+                  : "cursor-not-allowed bg-line text-ink-muted/60"
+              )}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Extras + checkout modal-like panel */}
       <AnimatePresence>
@@ -905,6 +1012,45 @@ export function CourtBookingFlow({
               {step === "checkout" && (
                 <>
                   <h2 className="font-heading text-xl font-bold text-ink">Checkout</h2>
+
+                  {/*
+                    Offered here rather than only on a sign-in page, because
+                    this is the moment it saves work: three fields already
+                    typed, or one tap. A guest booking still goes through
+                    untouched below — the club would rather take the booking
+                    than insist on an account, so this is a shortcut, not a gate.
+                  */}
+                  {!signedIn && (
+                    <div className="mt-5">
+                      <button
+                        type="button"
+                        onClick={signInFromCheckout}
+                        disabled={oauthLoading}
+                        className="relative flex w-full items-center justify-center rounded-court border border-line bg-surface-base py-3 text-sm font-semibold text-ink transition-colors hover:border-ink-muted/40 disabled:opacity-50"
+                      >
+                        <span className="absolute left-4 flex h-5 w-5 items-center justify-center">
+                          {oauthLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <FcGoogle className="h-5 w-5" />
+                          )}
+                        </span>
+                        Continue with Google
+                      </button>
+                      <p className="mt-2 text-center text-[11px] text-ink-muted">
+                        Fills your details in and keeps this booking in your account.
+                        We&apos;ll bring you straight back here.
+                      </p>
+                      <div className="my-4 flex items-center gap-3">
+                        <span className="h-px flex-1 bg-line" />
+                        <span className="text-[11px] uppercase tracking-wide text-ink-muted">
+                          or book as a guest
+                        </span>
+                        <span className="h-px flex-1 bg-line" />
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-5 space-y-3">
                     <input
                       placeholder="Full name"

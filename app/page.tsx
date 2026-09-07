@@ -21,7 +21,7 @@ export default function HomePage() {
         hero would be taller than the screen on arrival. A browser that does not
         know svh ignores the line and gets the old auto height, which is fine.
       */}
-      <section className="relative isolate flex min-h-[78svh] flex-col justify-end overflow-hidden bg-brand-dark md:block md:min-h-0">
+      <section className="relative isolate flex min-h-[78svh] flex-col justify-start overflow-hidden bg-brand-dark md:block md:min-h-0">
         {/*
           Muted + playsInline + autoPlay is the only combination iOS Safari will
           start on its own. The poster carries the first paint so the headline
@@ -67,13 +67,17 @@ export default function HomePage() {
           that holds the headline against the bright half of the court, and a
           horizontal fade clears a column nobody has on a 390px screen.
         */}
-        {/* Phone: four stops, not three, because the shape matters more than the
-            depth. Nearly clear over the top third where nobody is reading, then
-            a fast ramp into a floor dark enough to hold white text against the
-            brightest frame of the clip. The numbers are measured — see the
-            contrast check in the commit that introduced them — not eyeballed. */}
+        {/* Phone: dark where the words are, clearing where the rally is.
+
+            The copy sits in the top third now, so the scrim is heaviest there
+            and fades out over the lower half — which is where the players
+            actually are in this clip, and where it was being hidden. Four
+            stops, because the shape matters more than the depth: a flat wash
+            dark enough for the headline would have covered the match again.
+            The numbers are measured against the brightest frames, not
+            eyeballed — the check is in the commit that set them. */}
         <div
-          className="absolute inset-0 z-0 bg-[linear-gradient(to_bottom,rgba(0,26,51,0.08)_0%,rgba(0,26,51,0.12)_20%,rgba(0,26,51,0.58)_36%,rgba(0,26,51,0.74)_100%)] md:hidden"
+          className="absolute inset-0 z-0 bg-[linear-gradient(to_bottom,rgba(0,26,51,0.82)_0%,rgba(0,26,51,0.76)_34%,rgba(0,26,51,0.50)_52%,rgba(0,26,51,0.12)_100%)] md:hidden"
           aria-hidden="true"
         />
         {/* Desktop, unchanged: a vertical wash for overall contrast, and a
@@ -99,7 +103,7 @@ export default function HomePage() {
           or above, and giving this one its own compositing layer, means the
           text is painted over the video by the same machinery that draws it.
         */}
-        <div className="relative z-10 mx-auto w-full max-w-6xl transform-gpu px-7 pb-10 pt-12 sm:px-8 sm:py-24 md:py-32">
+        <div className="relative z-10 mx-auto w-full max-w-6xl transform-gpu px-7 pb-10 pt-6 sm:px-8 sm:py-24 md:py-32">
           {/*
             The opening hours and the supporting paragraph move out of the hero
             on a phone and sit on the band below it — see the section that
@@ -138,9 +142,25 @@ export default function HomePage() {
             a clean car from our wash bay — all in one checkout.
           </p>
 
+          {/* Prices are the first thing a new visitor looks for; giving the
+              cheapest real rate here saves them a trip into the booking grid.
+              It sits above the buttons on a phone: it is the last piece of
+              plain white text in the hero, and up here it is over the dark part
+              of the scrim rather than the part that has been let clear. */}
+          <p className="mt-4 text-sm text-white/80 sm:hidden">
+            From {formatMoney(6000)} an hour off-peak · {formatMoney(800)} car wash
+          </p>
+
           {/* Full width on a phone: two buttons at their natural width leave a
-              ragged edge, and a thumb wants the whole row to aim at. */}
-          <div className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap sm:gap-4">
+              ragged edge, and a thumb wants the whole row to aim at.
+
+              The secondary button is solid on a phone rather than glass. Glass
+              borrows its contrast from whatever is behind it, and behind it now
+              is the part of the video deliberately left clear — measured at
+              3.2:1 before the button's own white tint lightened it further,
+              which is under what a 14px label needs. It keeps the glass look at
+              sm and up, where the scrim is dark. */}
+          <div className="mt-6 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap sm:gap-4">
             <Link
               href="/book"
               className="group flex items-center justify-center gap-2 rounded-court bg-brand px-6 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02] sm:justify-start"
@@ -150,16 +170,14 @@ export default function HomePage() {
             </Link>
             <Link
               href="/car-wash"
-              className="flex items-center justify-center gap-2 rounded-court border border-white/25 bg-white/10 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20 sm:justify-start"
+              className="flex items-center justify-center gap-2 rounded-court border border-white/30 bg-brand-dark/75 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20 sm:justify-start sm:border-white/25 sm:bg-white/10"
             >
               <Car className="h-4 w-4" />
               Book a car wash only
             </Link>
           </div>
 
-          {/* Prices are the first thing a new visitor looks for; giving the
-              cheapest real rate here saves them a trip into the booking grid. */}
-          <p className="mt-6 text-sm text-white/75 sm:mt-8 sm:text-white/65">
+          <p className="mt-6 hidden text-sm text-white/65 sm:mt-8 sm:block">
             From {formatMoney(6000)} an hour off-peak · {formatMoney(800)} car wash
           </p>
         </div>
