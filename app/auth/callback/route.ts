@@ -1,15 +1,28 @@
 import { NextResponse, type NextRequest } from "next/server";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { createServerSupabase } from "@/lib/supabase/server";
 
 /**
- * Where an OAuth provider sends the browser back to.
+ * Every way of arriving signed in ends up here.
  *
- * Supabase redirects here with a `code`; that code is exchanged for a session
- * and written into cookies by the server client. Until that exchange happens
- * the user is not signed in, which is why this cannot be a client component —
- * the cookies have to be set on a real response.
+ * Three things land on this route and all of them have to leave with a session
+ * cookie, which is why it cannot be a client component — cookies have to be
+ * set on a real response:
  *
- * Register this path in each provider as
+ *   - an OAuth provider, returning with `code`
+ *   - the link in a confirm-your-email message
+ *   - the link in a reset-your-password message, on its way to /reset-password
+ *
+ * The two email links can arrive in either of two shapes depending on what the
+ * Supabase email templates are set to. `code` is the PKCE flow and is what the
+ * default templates produce; `token_hash` + `type` is what a template using
+ * {{ .TokenHash }} produces, and it is worth knowing that only the second one
+ * survives being opened on a different device from the one that asked for it —
+ * PKCE keeps its verifier in the browser that started the flow, so a link
+ * opened on a phone after signing up on a laptop fails. Both are handled, so
+ * the templates can be changed later without touching this file.
+ *
+ * Register this path in each OAuth provider as
  * `https://<project-ref>.supabase.co/auth/v1/callback` — the provider talks to
  * Supabase, and Supabase forwards here.
  */
@@ -35,14 +48,36 @@ export async function GET(req: NextRequest) {
       `${origin}/login?error=${encodeURIComponent(providerError)}`
     );
   }
-  if (!code) {
+  const tokenHash = url.searchParams.get("token_hash");
+  const otpType = url.searchParams.get("type") as EmailOtpType | null;
+
+  if (!code && !(tokenHash && otpType)) {
     return NextResponse.redirect(`${origin}/login?error=No%20sign-in%20code%20was%20returned.`);
   }
 
   const supabase = await createServerSupabase();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+  const { error } = code
+    ? await supabase.auth.exchangeCodeForSession(code)
+    : await supabase.auth.verifyOtp({ type: otpType!, token_hash: tokenHash! });
+
   if (error) {
+    /*
+      An expired or already-used link is the common case here, not a bug, and
+      it deserves a way forward rather than a raw error string. Recovery links
+      last an hour and work once; a confirmation link opened twice is the
+      second click on the same email.
+    */
+    if (otpType === "recovery" || next === "/reset-password") {
+      return NextResponse.redirect(`${origin}/forgot-password`);
+    }
     return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`);
+  }
+
+  // A confirmed signup goes back to the sign-in page's success notice unless
+  // it was told somewhere better to be, so the person sees that it worked.
+  if (!next && (otpType === "signup" || otpType === "email")) {
+    return NextResponse.redirect(`${origin}/account`);
   }
 
   // An explicit `next` wins. Otherwise send staff to the dashboard and everyone
