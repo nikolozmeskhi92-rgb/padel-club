@@ -3,7 +3,18 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { addDays, format, isSameDay } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Check, AlertCircle, Droplets, Clock, RefreshCw, ChevronDown, Home } from "lucide-react";
+import {
+  Loader2,
+  Check,
+  AlertCircle,
+  Droplets,
+  Clock,
+  RefreshCw,
+  ChevronDown,
+  ChevronLeft,
+  Home,
+  X,
+} from "lucide-react";
 import { isPeakHour, formatMoney } from "@/lib/pricing";
 import { cn } from "@/lib/utils/cn";
 import {
@@ -165,6 +176,81 @@ export function CourtBookingFlow({
   const [oauthLoading, setOauthLoading] = useState(false);
 
   /**
+   * The sheet is a screen, so the device's Back button has to treat it like one.
+   *
+   * Without this, Back from the checkout sheet leaves /book altogether and the
+   * chosen slot goes with it — on a phone that is the most-pressed control on
+   * the device, and it was throwing the booking away. Every step into the sheet
+   * pushes one history entry; going back pops one and moves one screen back,
+   * so Back reads as "up one level" rather than "abandon everything".
+   *
+   * The counter is what keeps the two in step. Closing from the UI zeroes it
+   * *before* unwinding the entries, so the popstate events that unwinding
+   * causes are ignored rather than stepping back a second time.
+   */
+  const sheetDepth = useRef(0);
+
+  function openSheet(next: "extras" | "checkout") {
+    if (typeof window !== "undefined") {
+      window.history.pushState({ lukiSheet: next }, "");
+      sheetDepth.current += 1;
+    }
+    setStep(next);
+  }
+
+  /** Leave the sheet entirely, taking its history entries with it. */
+  function closeSheet() {
+    const depth = sheetDepth.current;
+    sheetDepth.current = 0;
+    setStep("slot");
+    if (depth > 0 && typeof window !== "undefined") window.history.go(-depth);
+  }
+
+  /** One screen back inside the sheet. Driven through history so Back agrees. */
+  function sheetBack() {
+    if (sheetDepth.current > 0 && typeof window !== "undefined") window.history.back();
+    else setStep("extras");
+  }
+
+  useEffect(() => {
+    function onPop() {
+      // Zero means the sheet is already closed and this event is the tail of
+      // our own unwinding — or a navigation that has nothing to do with us.
+      if (sheetDepth.current === 0) return;
+      sheetDepth.current -= 1;
+      setStep((s) => (s === "checkout" ? "extras" : "slot"));
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") closeSheet();
+    }
+    window.addEventListener("popstate", onPop);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("keydown", onKey);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * The page behind a modal should not scroll. iOS ignores this on <body>, so
+   * the sheet also sets overscroll-contain; between them a flick inside the
+   * sheet stays inside the sheet. Deliberately not `position: fixed` on the
+   * body — that locks scrolling properly but throws the page back to the top
+   * when it is released, and losing your place in the day was the complaint
+   * that got the scroll anchoring written in the first place.
+   */
+  useEffect(() => {
+    const open = step === "extras" || step === "checkout";
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [step]);
+
+  /**
    * Sign in from checkout without losing the booking.
    *
    * OAuth leaves the site entirely, so anything held only in React state is
@@ -190,12 +276,15 @@ export function CourtBookingFlow({
     if (t) setSelectedTime(t);
     if (c) setSelectedCourt(c);
     if (m === 60 || m === 90) setDuration(m);
-    if (t && c) {
-      preserveSelection.current = true;
-      setStep("checkout");
-    }
     // Leave the address bar clean so a refresh does not re-trigger this.
     window.history.replaceState(null, "", window.location.pathname);
+    if (t && c) {
+      preserveSelection.current = true;
+      // Comes back straight into the sheet, so it needs the same history entry
+      // a tap would have pushed — otherwise Back here leaves /book and undoes
+      // the sign-in the customer just did.
+      openSheet("checkout");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -611,7 +700,13 @@ export function CourtBookingFlow({
         }
       }
 
+      // The booking is made, so the sheet's history entries are spent: drop
+      // them, or Back from the confirmation would walk the customer through
+      // checkout and extras again for a court they have already reserved.
+      const depth = sheetDepth.current;
+      sheetDepth.current = 0;
       setStep("success");
+      if (depth > 0) window.history.go(-depth);
     } catch {
       setError("Network error — please try again.");
     } finally {
@@ -929,7 +1024,7 @@ export function CourtBookingFlow({
             <button
               type="button"
               disabled={!selectedCourt || !selectedTime}
-              onClick={() => setStep("extras")}
+              onClick={() => openSheet("extras")}
               className={cn(
                 "shrink-0 rounded-court px-5 py-3 text-sm font-semibold transition-colors",
                 selectedCourt && selectedTime
@@ -943,26 +1038,108 @@ export function CourtBookingFlow({
         </div>
       )}
 
-      {/* Extras + checkout modal-like panel */}
+      {/*
+        The extras / checkout sheet.
+
+        It used to be a panel with no way out. Tapping the dark area behind it
+        closed it, but on a phone there was barely any dark area to tap: the
+        sheet was `85vh`, and on iOS `vh` is measured with the browser toolbars
+        hidden, so 85vh is very nearly the whole visible screen once they are
+        showing. The result was a full-screen panel with no close button, no
+        back arrow, and a hardware Back that left the booking page entirely.
+
+        What it does now is what a sheet is expected to do:
+          - a visible ✕ that closes it, and a ‹ back arrow on checkout that
+            returns to extras rather than throwing the whole thing away
+          - the grabber, so it reads as something you can dismiss
+          - the device's own Back button steps back through it, one screen at a
+            time, instead of leaving /book and losing the slot
+          - Escape on a keyboard, and the dark area still closes it
+          - 85svh, the *small* viewport unit, so a strip of the page behind is
+            always visible — that strip is what tells you this is a layer over
+            something, not a new page
+
+        Header and body are separate boxes: the header stays put while the body
+        scrolls, so the way out never scrolls off the top.
+      */}
       <AnimatePresence>
         {(step === "extras" || step === "checkout") && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
-            onClick={() => setStep("slot")}
+            /*
+              No backdrop-blur. A backdrop-filter on a fixed layer composites
+              separately from the layer that receives touches on iOS, which is
+              half of why the Continue button used to need two taps. The scrim
+              is a plain colour for the same reason.
+            */
+            className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 sm:items-center"
+            onClick={closeSheet}
           >
             <motion.div
-              initial={{ y: 40, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="sheet-title"
+              /*
+                Opacity only, no slide. The same AnimatePresence transform on a
+                fixed overlay is what left Safari hit-testing the action bar at
+                the position it animated from, so the first tap went nowhere. A
+                sheet that fades in is a small loss; a sheet whose buttons eat
+                the first tap is the bug we already fixed once.
+              */
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-court border border-line bg-surface-base shadow-card p-6 sm:rounded-court"
+              className="flex max-h-[85svh] w-full max-w-lg flex-col rounded-t-court border border-line bg-surface-base shadow-card sm:max-h-[85vh] sm:rounded-court"
             >
+              {/* Grabber — the phone's shorthand for "this can be dismissed". */}
+              <div className="flex shrink-0 justify-center pt-2.5 sm:hidden" aria-hidden="true">
+                <span className="h-1 w-9 rounded-full bg-line" />
+              </div>
+
+              <div className="flex shrink-0 items-center gap-1 border-b border-line px-2 py-2 sm:px-3">
+                {step === "checkout" ? (
+                  <button
+                    type="button"
+                    onClick={sheetBack}
+                    aria-label="Back to extras"
+                    className="flex h-11 w-11 items-center justify-center rounded-court text-ink-muted active:bg-surface-muted"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                ) : (
+                  /* Keeps the title centred when there is nothing to go back to. */
+                  <span className="h-11 w-11 shrink-0" aria-hidden="true" />
+                )}
+
+                <h2
+                  id="sheet-title"
+                  className="min-w-0 flex-1 truncate text-center font-heading text-base font-bold text-ink"
+                >
+                  {step === "extras" ? "Anything else?" : "Checkout"}
+                </h2>
+
+                <button
+                  type="button"
+                  onClick={closeSheet}
+                  aria-label="Close"
+                  className="flex h-11 w-11 items-center justify-center rounded-court text-ink-muted active:bg-surface-muted"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/*
+                overscroll-contain stops a flick at the end of this list from
+                scrolling the page underneath, which is what makes a sheet feel
+                attached to the screen rather than floating over a moving page.
+                min-h-0 is what lets it actually scroll inside a flex column.
+              */}
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
               {step === "extras" && (
                 <>
-                  <h2 className="font-heading text-xl font-bold text-ink">Anything else?</h2>
-                  <p className="mt-1 text-sm text-ink-muted/80">Optional — skip if you're all set.</p>
+                  <p className="text-sm text-ink-muted/80">Optional — skip if you're all set.</p>
                   <div className="mt-5 space-y-3">
                     {EQUIPMENT.map((item) => (
                       <div key={item.id} className="flex items-center justify-between rounded-court border border-line p-3">
@@ -1001,7 +1178,7 @@ export function CourtBookingFlow({
                   </div>
 
                   <button
-                    onClick={() => setStep("checkout")}
+                    onClick={() => openSheet("checkout")}
                     className="mt-6 w-full rounded-court bg-brand py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
                   >
                     Continue to checkout · {formatMoney(price)}
@@ -1011,8 +1188,6 @@ export function CourtBookingFlow({
 
               {step === "checkout" && (
                 <>
-                  <h2 className="font-heading text-xl font-bold text-ink">Checkout</h2>
-
                   {/*
                     Offered here rather than only on a sign-in page, because
                     this is the moment it saves work: three fields already
@@ -1111,6 +1286,7 @@ export function CourtBookingFlow({
                   </p>
                 </>
               )}
+              </div>
             </motion.div>
           </motion.div>
         )}
