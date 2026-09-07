@@ -1,9 +1,8 @@
-import { format } from "date-fns";
 import { getResend } from "@/lib/email/send";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { formatMoney } from "@/lib/currency";
 import { CLUB_NAME } from "@/lib/club";
-import { CLUB_TIMEZONE } from "@/lib/time/club";
+import { CLUB_TIMEZONE, clubHHMM } from "@/lib/time/club";
 
 export type StaffAlert = {
   type: "court" | "car_wash";
@@ -83,7 +82,11 @@ export async function sendStaffBookingAlert(
     const source = alert.bookedBy === "desk" ? "Taken at the desk" : "Booked online";
 
     const rows: [string, string][] = [
-      ["When", `${when.format(alert.start)} – ${format(end, "HH:mm")} (club time)`],
+      // Both ends on the club's clock. The start already was; the end went
+      // through date-fns, which formats in the server's timezone — UTC on
+      // Vercel — so this line read "10:00 – 07:30 (club time)", four hours
+      // backwards, on every alert the club has ever received.
+      ["When", `${when.format(alert.start)} – ${clubHHMM(end)} (club time)`],
       ["What", alert.resourceName],
       ["Guest", alert.guestName],
       ["Email", alert.guestEmail],

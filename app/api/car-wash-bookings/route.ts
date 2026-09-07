@@ -6,7 +6,6 @@ import { sendBookingConfirmationEmail } from "@/lib/email/send";
 import { sendStaffBookingAlert } from "@/lib/email/notify-staff";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import {
-  CHANGEOVER_MINUTES,
   clubDayBounds,
   isWithinOpeningHours,
 } from "@/lib/time/club";
@@ -71,7 +70,10 @@ export async function POST(req: NextRequest) {
   if (start.getTime() < Date.now()) {
     return NextResponse.json({ error: "SLOT_IN_PAST" }, { status: 400 });
   }
-  if (!isWithinOpeningHours(start, durationMinutes + CHANGEOVER_MINUTES)) {
+  // The advertised duration is the whole of it, turnaround included — adding the
+  // changeover here rejected the last slot of the day, which finishes exactly at
+  // closing.
+  if (!isWithinOpeningHours(start, durationMinutes)) {
     return NextResponse.json({ error: "OUTSIDE_OPENING_HOURS" }, { status: 400 });
   }
 
@@ -94,7 +96,9 @@ export async function POST(req: NextRequest) {
     p_start: start.toISOString(),
     p_service: service,
     p_duration_minutes: durationMinutes,
-    p_buffer_minutes: CHANGEOVER_MINUTES,
+    // Zero: the range is exactly what was sold. Kept as a parameter so the
+    // function's signature does not change under a deployment mid-flight.
+    p_buffer_minutes: 0,
     p_user_id: user?.id ?? null,
     p_guest_name: guestName,
     p_guest_email: guestEmail,

@@ -78,7 +78,18 @@ export type WashRecommendationResult = {
 };
 
 const BAY_COUNT = 4;
-const CHANGEOVER_MINUTES = 10; // staff turnover between cars, baked into every candidate block
+/**
+ * The end of the bay reservation for a wash of this length.
+ *
+ * One definition, used by the recommendation engine, by the /car-wash grid, and
+ * by the tests — so "how long does a wash hold the bay" cannot be answered two
+ * different ways by two files. Turnaround is inside the advertised duration; see
+ * CHANGEOVER_MINUTES in lib/time/club.ts for what that cost when it was not, and
+ * supabase/migrations/0013 for the SQL that writes the same range.
+ */
+export function washSlotEnd(start: Date, durationMinutes: number): Date {
+  return new Date(start.getTime() + durationMinutes * 60_000);
+}
 // Opening hours come from lib/time/club — this file used to declare its own
 // 07:00-22:00 pair, which disagreed with the club's real 08:00-23:00 and so
 // offered washes an hour before the gates opened and hid the last hour of the day.
@@ -141,9 +152,8 @@ function generateFreeCandidates(
         start <= lastPossibleStart;
         start = new Date(start.getTime() + SEARCH_STEP_MINUTES * 60_000)
       ) {
-        const end = new Date(start.getTime() + service.durationMinutes * 60_000);
-        const reservedEnd = new Date(end.getTime() + CHANGEOVER_MINUTES * 60_000);
-        if (isBayFree(bayId, start, reservedEnd, existingBayBookings)) {
+        const end = washSlotEnd(start, service.durationMinutes);
+        if (isBayFree(bayId, start, end, existingBayBookings)) {
           out.push({ bayId, service, start, end });
         }
       }

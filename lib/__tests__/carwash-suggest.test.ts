@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { recommendWashForCourtSlot, type WashService } from "@/lib/carwash/suggest";
-import { CLOSE_HOUR, OPEN_HOUR, clubWallTimeToInstant } from "@/lib/time/club";
+import { recommendWashForCourtSlot, washSlotEnd, type WashService } from "@/lib/carwash/suggest";
+import { CLOSE_HOUR, OPEN_HOUR, clubHHMM, clubWallTimeToInstant } from "@/lib/time/club";
 
 /**
  * The wash cross-sell went silently dead when the club's closing time moved to
@@ -72,6 +72,56 @@ describe("wash recommendations", () => {
       expect(s.start.getTime()).toBeGreaterThanOrEqual(dayOpen);
       expect(s.end.getTime()).toBeLessThanOrEqual(dayClose);
     }
+  });
+
+  it("holds a bay only for as long as the wash was sold", () => {
+    // The club's complaint, as arithmetic: a 90-minute court booking with a
+    // 30-minute wash on it should leave the bay able to take two more washes,
+    // not none. The changeover used to be added to the reserved range, so a
+    // 30-minute wash held the bay for 40 — which on a half-hour grid means it
+    // swallowed 10:00 and 10:30 and could not be resold until 11:00.
+    const quick = SERVICES.find((s) => s.id === "quick_wash")!;
+    // Built the way the app reserves it, so re-adding the changeover to
+    // washSlotEnd breaks this test rather than quietly costing the club a bay.
+    const theirWash = {
+      bayId: 1,
+      start: at("10:00"),
+      end: washSlotEnd(at("10:00"), quick.durationMinutes),
+    };
+
+    // Everything on one bay: bays 2-4 blocked all day so the answer can only
+    // come from bay 1.
+    const midnight = clubWallTimeToInstant("2026-09-07", "00:00").getTime();
+    const others = [2, 3, 4].map((bayId) => ({
+      bayId,
+      start: new Date(midnight),
+      end: new Date(midnight + 24 * 3600_000),
+    }));
+
+    const r = recommendWashForCourtSlot({
+      courtStart: at("10:00"),
+      courtEnd: at("11:30"),
+      services: [quick],
+      existingBayBookings: [theirWash, ...others],
+    });
+
+    expect(r.tier).toBe("perfect_fit");
+
+    // Both remaining half-hours of the match are still sellable on that bay.
+    const startsOffered = new Set(
+      [r.best!, ...r.alternatives, ...r.perService].map((s) => clubHHMM(s.start))
+    );
+    const anyFrom = (hhmm: string) =>
+      recommendWashForCourtSlot({
+        courtStart: at(hhmm),
+        courtEnd: at("11:30"),
+        services: [quick],
+        existingBayBookings: [theirWash, ...others],
+      });
+
+    expect(anyFrom("10:30").best?.start.getTime()).toBe(at("10:30").getTime());
+    expect(anyFrom("11:00").best?.start.getTime()).toBe(at("11:00").getTime());
+    expect(startsOffered.size).toBeGreaterThan(0);
   });
 
   it("says no_wash_today only when the bays really are full all day", () => {

@@ -1,7 +1,7 @@
 import { Resend } from "resend";
-import { format } from "date-fns";
 import BookingConfirmation from "@/emails/BookingConfirmation";
 import { formatMoney } from "@/lib/currency";
+import { clubDateLabel, clubTimeRange } from "@/lib/time/club";
 
 // Constructed lazily, not at module scope: `new Resend(undefined)` throws, and a
 // module-scope throw takes down the whole route at import time — which broke
@@ -86,13 +86,17 @@ export async function sendBookingConfirmationEmail(
   const { error } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL || "Padel Club <bookings@example.com>",
     to,
-    subject: `Booking confirmed — ${resourceName}, ${format(date, "EEE MMM d")}`,
+    subject: `Booking confirmed — ${resourceName}, ${clubDateLabel(date)}`,
     react: BookingConfirmation({
       guestName,
       bookingCode,
       resourceName,
-      dateLabel: format(date, "EEE, MMM d"),
-      timeLabel: `${format(date, "HH:mm")} – ${format(endTime, "HH:mm")}`,
+      // On the club's clock, not the server's. date-fns formats in the
+      // timezone of the machine running it, and on Vercel that is UTC: a court
+      // booked for 10:00 was confirmed to the customer as 06:00, and a booking
+      // after 20:00 was confirmed with the wrong date as well.
+      dateLabel: clubDateLabel(date),
+      timeLabel: clubTimeRange(date, durationMinutes),
       priceLabel,
       paymentStatus,
       clubName,

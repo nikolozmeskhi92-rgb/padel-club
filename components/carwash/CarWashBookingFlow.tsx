@@ -6,8 +6,8 @@ import { Loader2, Check, Droplets, Sparkles, Zap, AlertCircle, RefreshCw } from 
 import { cn } from "@/lib/utils/cn";
 import { formatMoney } from "@/lib/pricing";
 import { useGuestIdentity } from "@/lib/hooks/useGuestIdentity";
+import { washSlotEnd } from "@/lib/carwash/suggest";
 import {
-  CHANGEOVER_MINUTES,
   buildSlotLabels,
   clubDateKey,
   clubWallTimeToInstant,
@@ -96,7 +96,7 @@ export function CarWashBookingFlow() {
     };
   }, [dateKey, reloadKey]);
 
-  /** Ranges already reserved, per bay. The stored range includes the changeover. */
+  /** Ranges already reserved, per bay. Turnaround is inside them, not after. */
   const busyByBay = useMemo(() => {
     const map = new Map<number, [Date, Date][]>();
     for (const b of booked) {
@@ -115,7 +115,7 @@ export function CarWashBookingFlow() {
   function isFree(bayId: number, label: string): boolean {
     const start = instantFor(label);
     if (start.getTime() <= Date.now()) return false; // no booking the past
-    const end = new Date(start.getTime() + (service.duration + CHANGEOVER_MINUTES) * 60_000);
+    const end = washSlotEnd(start, service.duration);
     const busy = busyByBay.get(bayId) ?? [];
     return !busy.some(([bs, be]) => start < be && end > bs);
   }
