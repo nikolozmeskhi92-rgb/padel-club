@@ -322,12 +322,24 @@ export function CourtBookingFlow({
   }, [step]);
 
   /**
+   * A wash slot recovered from the return URL, waiting to be checked.
+   *
+   * Not applied straight from the URL: a wash reserves a physical bay, and the
+   * customer has just spent thirty seconds on Google's screens. The effect
+   * below asks the server what is still free and only then puts it back in the
+   * basket — or says it is gone, which is better than quietly charging for a
+   * bay somebody else now has.
+   */
+  const pendingWash = useRef<{ bayId: number; serviceId: string; startIso: string } | null>(null);
+
+  /**
    * Sign in from checkout without losing the booking.
    *
    * OAuth leaves the site entirely, so anything held only in React state is
    * gone by the time the customer comes back. The choice already made is
-   * written into the return URL instead — day, time, court, length — and read
-   * back on mount, landing them on the checkout step with the same slot and
+   * written into the return URL instead — day, time, court, length, the
+   * equipment and the wash — and read back on mount, landing them on the
+   * checkout step with the same basket and
    * their details now filled in from the account. Query parameters rather than
    * storage: they survive the round trip, they survive a cold tab, and you can
    * see what went wrong by reading the address bar.
@@ -347,6 +359,30 @@ export function CourtBookingFlow({
     if (t) setSelectedTime(t);
     if (c) setSelectedCourt(c);
     if (m === 60 || m === 90) setDuration(m);
+
+    const eq = q.get("eq");
+    if (eq) {
+      const restored: Record<number, number> = {};
+      for (const pair of eq.split(",")) {
+        const [id, qty] = pair.split(":").map(Number);
+        // Ignore anything that is not a real item or a sane quantity. The URL
+        // is a hint about what was chosen, not an instruction to be obeyed.
+        if (EQUIPMENT.some((e) => e.id === id) && qty > 0 && qty <= 20) restored[id] = qty;
+      }
+      if (Object.keys(restored).length > 0) setEquipment(restored);
+    }
+
+    const w = q.get("w");
+    if (w) {
+      const [bay, serviceId, startIso] = w.split("~");
+      if (bay && serviceId && startIso) {
+        // Held rather than applied: a wash is a real reservation of a bay, and
+        // the bay may have been sold while this person was away signing in. The
+        // effect below asks the server what is free before putting it back in
+        // the basket.
+        pendingWash.current = { bayId: Number(bay), serviceId, startIso };
+      }
+    }
     // Leave the address bar clean so a refresh does not re-trigger this.
     window.history.replaceState(null, "", window.location.pathname);
     if (t && c) {
@@ -368,6 +404,33 @@ export function CourtBookingFlow({
     back.searchParams.set("t", selectedTime);
     back.searchParams.set("c", String(selectedCourt));
     back.searchParams.set("m", String(duration));
+
+    /*
+      Everything that was chosen, not just the court.
+
+      Only the court survived this trip before, so a basket of GEL 114 came back
+      from Google as GEL 90 and the rackets and the wash were simply gone. The
+      only clue was the number, and a customer who does not remember the total
+      to the lari never notices — they just pay less than they meant to and
+      turn up expecting a wash nobody booked.
+
+      Quantities and ids only. Prices are looked up from EQUIPMENT and from the
+      wash suggestion the server hands back, never read out of the address bar,
+      so editing this URL changes what you asked for and not what it costs.
+    */
+    const eq = Object.entries(equipment)
+      .filter(([, qty]) => qty > 0)
+      .map(([id, qty]) => `${id}:${qty}`)
+      .join(",");
+    if (eq) back.searchParams.set("eq", eq);
+
+    // "~" and not ":" — the timestamp is full of colons.
+    if (chosenWash) {
+      back.searchParams.set(
+        "w",
+        `${chosenWash.bayId}~${chosenWash.service.id}~${chosenWash.start.toISOString()}`
+      );
+    }
 
     const callback = new URL("/auth/callback", window.location.origin);
     callback.searchParams.set("next", back.pathname + back.search);
@@ -682,6 +745,66 @@ export function CourtBookingFlow({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, selectedTime, selectedCourt, duration]);
+
+  /**
+   * Put the wash back, if it is still there to put back.
+   *
+   * Runs once after a sign-in return, as soon as the slot has been restored:
+   * ask the server for the wash options against this exact court booking and
+   * look for the one the customer had already chosen. Found, and it goes back
+   * in the basket at the price the server quotes. Gone, and they are told —
+   * the court is unaffected, and a bay that was sold in the meantime must not
+   * reappear on someone's total.
+   */
+  useEffect(() => {
+    const want = pendingWash.current;
+    if (!want || !selectedTime) return;
+    pendingWash.current = null;
+
+    let cancelled = false;
+    const courtStart = slotStartDate(selectedTime);
+    fetch(
+      `/api/car-wash/suggestions?courtStart=${encodeURIComponent(courtStart.toISOString())}&durationMinutes=${duration}`
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !data.result) return;
+        const revive = (s: any): WashSuggestion => ({
+          ...s,
+          start: new Date(s.start),
+          end: new Date(s.end),
+        });
+        const offered: WashSuggestion[] = [
+          data.result.best,
+          ...(data.result.alternatives ?? []),
+          ...(data.result.perService ?? []),
+        ]
+          .filter(Boolean)
+          .map(revive);
+
+        const match = offered.find(
+          (o) =>
+            o.bayId === want.bayId &&
+            o.service.id === want.serviceId &&
+            o.start.toISOString() === want.startIso
+        );
+
+        if (match) setChosenWash(match);
+        else
+          setToast(
+            "The car wash slot you'd picked was taken while you signed in — your court is still held."
+          );
+      })
+      .catch(() => {
+        // Silent: the court booking is what matters and it is intact. The
+        // customer can add a wash again from the previous step.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTime, duration]);
 
   const price = useMemo(() => {
     if (!selectedTime) return 0;
