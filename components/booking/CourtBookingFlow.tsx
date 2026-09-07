@@ -221,6 +221,20 @@ export function CourtBookingFlow({
     if (el) anchor.current = { el, top: el.getBoundingClientRect().top };
   };
 
+  /**
+   * The action bar, so the page can measure what it is covering.
+   *
+   * A fixed bar hides the bottom of the page by design, and that is fine for
+   * anything the customer can scroll to. It is not fine for something the page
+   * has just revealed: opening a time row inserts the court chips directly
+   * underneath it, and a chip that is half behind the bar takes the tap on its
+   * visible half and ignores it on the other. That is the second tap the club
+   * kept finding on the list, and not on the map — the map never inserts
+   * anything.
+   */
+  const actionBar = useRef<HTMLDivElement>(null);
+  const revealPicker = useRef(false);
+
   // Heights of the two tall blocks, so a day change swaps content of the same
   // size instead of collapsing the page and dropping it back.
   const listBoxRef = useRef<HTMLDivElement>(null);
@@ -560,6 +574,34 @@ export function CourtBookingFlow({
     const delta = a.el.getBoundingClientRect().top - a.top;
     if (Math.abs(delta) > 1) {
       window.scrollBy({ top: delta, left: 0, behavior: "instant" as ScrollBehavior });
+    }
+  });
+
+  /**
+   * Bring a freshly opened court picker out from under the action bar.
+   *
+   * Runs after the anchoring above, which has just put the row the customer
+   * touched back where their finger left it — and that is exactly why this is
+   * needed: holding the row still is what leaves the chips it revealed below
+   * the fold, behind a bar that covers the bottom of the screen. Whichever of
+   * those two wins alone is wrong, so both run, in this order.
+   *
+   * Only on opening, and only as far as it has to: if the chips already clear
+   * the bar the page does not move at all.
+   */
+  useLayoutEffect(() => {
+    if (!revealPicker.current) return;
+    revealPicker.current = false;
+
+    const picker = document.querySelector<HTMLElement>("[data-court-picker]");
+    const bar = actionBar.current;
+    if (!picker || !bar) return;
+
+    const breathingRoom = 12;
+    const overlap =
+      picker.getBoundingClientRect().bottom - (bar.getBoundingClientRect().top - breathingRoom);
+    if (overlap > 0) {
+      window.scrollBy({ top: overlap, left: 0, behavior: "instant" as ScrollBehavior });
     }
   });
 
@@ -1144,6 +1186,9 @@ export function CourtBookingFlow({
                   return;
                 }
                 setSelectedTime(t);
+                // This tap opens a row, so the chips it reveals have to be
+                // checked against the action bar once the layout settles.
+                revealPicker.current = true;
                 // Keep the court if it is free at the new time as well.
                 //
                 // Clearing it unconditionally is what made this take two taps:
@@ -1238,27 +1283,30 @@ export function CourtBookingFlow({
       */}
       {step === "slot" && (
         /*
-          The bar floats clear of the bottom edge rather than sitting on it.
+          A solid bar that reaches the bottom edge, with the button lifted well
+          clear of it.
 
-          Flush against the bottom, Continue was inside the band iOS Safari
-          keeps for its own collapsed toolbar, and the club reported the
-          symptom exactly: "the first press just brings the browser's header
-          and footer back, and only then can I continue". That first tap was
-          never reaching the page — Safari took it to expand its chrome. The
-          same tap on a bar that ends 20px higher lands on the button.
+          Two bugs meet here and the shape has to answer both.
 
-          The gap is written against env(safe-area-inset-bottom), which is 0
-          while the toolbars are showing and grows to the home-indicator inset
-          once they collapse — so the clearance appears exactly when the
-          collapsed toolbar is there to be avoided, and the bar does not float
-          pointlessly high the rest of the time.
+          Flush against the bottom, Continue sat inside the band iOS Safari
+          keeps for its own collapsed toolbar, and the club described it
+          exactly: "the first press just brings the browser's header and footer
+          back, and only then can I continue". That tap never reached the page.
+          So the button is padded up, and the padding is written against
+          env(safe-area-inset-bottom) — 0 while the toolbars are showing, the
+          home-indicator inset once they collapse — which puts the clearance
+          there precisely when the collapsed toolbar is.
 
-          pointer-events-none on the wrapper, auto on the bar: the wrapper
-          spans the full width, and without that it would swallow taps on the
-          court map showing through beside the bar.
+          Floating the whole bar instead left a strip of page showing beneath
+          it, and the court chips of an expanded row landed in that strip:
+          half-covered, half-tappable, and the club found the second tap again.
+          The background reaching the bottom means nothing is ever partly
+          visible and partly reachable — what is behind the bar is behind it.
         */
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-          <div className="pointer-events-auto mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-court border border-line bg-surface-base px-5 py-3.5 shadow-[0_6px_24px_rgba(0,26,51,0.16)] sm:px-6 sm:py-4">
+        <div
+          ref={actionBar}
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface-base pb-[calc(env(safe-area-inset-bottom)+2rem)] shadow-[0_-4px_20px_rgba(0,26,51,0.07)] sm:pb-[calc(env(safe-area-inset-bottom)+0.9rem)]">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-7 pt-3.5 sm:px-8 sm:pt-4">
             {selectedCourt && selectedTime ? (
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-ink">
@@ -1800,7 +1848,10 @@ function TimeList({
             </button>
 
             {open && !soldOut && (
-              <div className="border-t border-line bg-surface-muted px-4 py-4 sm:px-5">
+              <div
+                data-court-picker=""
+                className="border-t border-line bg-surface-muted px-4 py-4 sm:px-5"
+              >
                 <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                   Choose a court
                 </p>
