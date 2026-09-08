@@ -86,14 +86,14 @@ export function FindBooking() {
           placeholder="Booking code (e.g. 4C26A6F3)"
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          className="w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 font-mono text-sm uppercase tracking-wider text-ink outline-none focus:border-brand"
+          className="w-full rounded-court border border-line bg-surface-muted px-4 py-3 font-mono text-base uppercase tracking-wider text-ink outline-none focus:border-brand sm:py-2.5 sm:text-sm"
         />
         <input
           type="email"
           placeholder="Email you booked with"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 text-sm text-ink outline-none focus:border-brand"
+          className="w-full rounded-court border border-line bg-surface-muted px-4 py-3 text-base text-ink outline-none focus:border-brand sm:py-2.5 sm:text-sm"
         />
         <button
           disabled={busy || !email.trim() || !code.trim()}

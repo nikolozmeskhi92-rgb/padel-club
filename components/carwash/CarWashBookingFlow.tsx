@@ -348,7 +348,7 @@ export function CarWashBookingFlow() {
                   }}
                   title={free ? undefined : "No bay free for this cycle length"}
                   className={cn(
-                    "rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
+                    "min-h-[44px] rounded-full border px-4 py-2 text-sm font-medium transition-colors",
                     selected
                       ? "border-brand bg-brand text-white"
                       : free
@@ -408,7 +408,7 @@ export function CarWashBookingFlow() {
               placeholder="Full name"
               value={guest.name}
               onChange={(e) => setGuest({ ...guest, name: e.target.value })}
-              className="w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 text-sm outline-none focus:border-brand"
+              className="w-full rounded-court border border-line bg-surface-muted px-4 py-3 text-base outline-none focus:border-brand sm:py-2.5 sm:text-sm"
             />
             <input
               placeholder="Email"
@@ -417,7 +417,7 @@ export function CarWashBookingFlow() {
               readOnly={signedIn}
               onChange={(e) => setGuest({ ...guest, email: e.target.value })}
               className={cn(
-                "w-full rounded-court border border-line bg-surface-muted px-4 py-2.5 text-sm outline-none focus:border-brand",
+                "w-full rounded-court border border-line bg-surface-muted px-4 py-3 text-base outline-none focus:border-brand sm:py-2.5 sm:text-sm",
                 signedIn && "cursor-not-allowed text-ink-muted"
               )}
             />

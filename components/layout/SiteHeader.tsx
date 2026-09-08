@@ -105,7 +105,7 @@ export async function SiteHeader() {
           )}
           <Link
             href="/book"
-            className="rounded-court bg-brand px-3.5 py-2 text-sm font-semibold text-white transition-transform hover:scale-[1.03] active:scale-[0.98] sm:px-4"
+            className="flex min-h-[44px] items-center rounded-court bg-brand px-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.03] active:scale-[0.98] sm:min-h-0 sm:py-2 sm:px-4"
           >
             Book a court
           </Link>

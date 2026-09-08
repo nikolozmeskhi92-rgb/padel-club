@@ -33,12 +33,12 @@ export function SiteFooter() {
             line on a phone and nothing at all above sm, where they still fit.
           */}
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 sm:flex-nowrap sm:gap-6">
-            <a href="/find" className="py-1 hover:text-ink-muted">Find your booking</a>
-            <a href="/directions" className="py-1 hover:text-ink-muted">Directions</a>
-            <a href="/blog" className="py-1 hover:text-ink-muted">News</a>
-            <a href="/privacy" className="py-1 hover:text-ink-muted">Privacy</a>
-            <a href="/terms" className="py-1 hover:text-ink-muted">Terms</a>
-            <a href="/admin" className="py-1 hover:text-ink-muted">Staff login</a>
+            <a href="/find" className="flex min-h-[44px] items-center hover:text-ink-muted">Find your booking</a>
+            <a href="/directions" className="flex min-h-[44px] items-center hover:text-ink-muted">Directions</a>
+            <a href="/blog" className="flex min-h-[44px] items-center hover:text-ink-muted">News</a>
+            <a href="/privacy" className="flex min-h-[44px] items-center hover:text-ink-muted">Privacy</a>
+            <a href="/terms" className="flex min-h-[44px] items-center hover:text-ink-muted">Terms</a>
+            <a href="/admin" className="flex min-h-[44px] items-center hover:text-ink-muted">Staff login</a>
           </div>
 
           {socials.length > 0 && (
