@@ -12,10 +12,7 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronLeft,
-  CreditCard,
   Home,
-  Landmark,
-  Wallet,
   X,
 } from "lucide-react";
 import { isPeakHour, formatMoney } from "@/lib/pricing";
@@ -36,6 +33,13 @@ import { MonthPicker } from "@/components/booking/MonthPicker";
 import { CLUB_PHONE } from "@/lib/club";
 import { FcGoogle } from "react-icons/fc";
 import { createClient } from "@/lib/supabase/client";
+import {
+  PaymentFootnote,
+  PaymentMethodPicker,
+  PaymentToast,
+  simulationMessage,
+  type PayMethod,
+} from "@/components/booking/payment";
 
 type CourtRow = { id: number; name: string; indoor: boolean };
 type BookedSlot = { court_id: number; slot: string; status: string };
@@ -95,49 +99,6 @@ type Step = "slot" | "extras" | "checkout" | "payment" | "success";
  * TBC / BOG / PayPal buttons that charged nothing while the booking was
  * written `unpaid` and the customer believed they had paid.
  */
-type PayMethod = "card" | "paypal" | "club";
-
-/**
- * The three ways to pay, in the order they are offered.
- *
- * Named in words rather than drawn as bank logos: TBC's and Bank of Georgia's
- * marks belong to them, and the club will be given the correct artwork as part
- * of the merchant agreement that makes these buttons real. Until then the
- * names carry it, and the badge says what is actually true.
- *
- * "Pay at the club" is last but selected by default — last because the two
- * that people look for first should be where they look, default because it is
- * the only one that takes a booking today.
- */
-const PAY_METHODS: {
-  id: PayMethod;
-  name: string;
-  hint: string;
-  icon: typeof CreditCard;
-  comingSoon?: boolean;
-}[] = [
-  {
-    id: "card",
-    name: "Card — TBC or Bank of Georgia",
-    hint: "Visa and Mastercard issued in Georgia",
-    icon: CreditCard,
-    comingSoon: true,
-  },
-  {
-    id: "paypal",
-    name: "PayPal",
-    hint: "Useful if you are paying from abroad",
-    icon: Wallet,
-    comingSoon: true,
-  },
-  {
-    id: "club",
-    name: "Pay at the club",
-    hint: "Cash or card terminal at reception",
-    icon: Landmark,
-  },
-];
-
 /**
  * `horizonDays` is how far ahead this caller may book. The public gets a week
  * as a row of day chips; the desk gets a month as a calendar, because a caller
@@ -220,20 +181,6 @@ export function CourtBookingFlow({
   const anchorTo = (el: HTMLElement | null | undefined) => {
     if (el) anchor.current = { el, top: el.getBoundingClientRect().top };
   };
-
-  /**
-   * The action bar, so the page can measure what it is covering.
-   *
-   * A fixed bar hides the bottom of the page by design, and that is fine for
-   * anything the customer can scroll to. It is not fine for something the page
-   * has just revealed: opening a time row inserts the court chips directly
-   * underneath it, and a chip that is half behind the bar takes the tap on its
-   * visible half and ignores it on the other. That is the second tap the club
-   * kept finding on the list, and not on the map — the map never inserts
-   * anything.
-   */
-  const actionBar = useRef<HTMLDivElement>(null);
-  const revealPicker = useRef(false);
 
   // Heights of the two tall blocks, so a day change swaps content of the same
   // size instead of collapsing the page and dropping it back.
@@ -574,34 +521,6 @@ export function CourtBookingFlow({
     const delta = a.el.getBoundingClientRect().top - a.top;
     if (Math.abs(delta) > 1) {
       window.scrollBy({ top: delta, left: 0, behavior: "instant" as ScrollBehavior });
-    }
-  });
-
-  /**
-   * Bring a freshly opened court picker out from under the action bar.
-   *
-   * Runs after the anchoring above, which has just put the row the customer
-   * touched back where their finger left it — and that is exactly why this is
-   * needed: holding the row still is what leaves the chips it revealed below
-   * the fold, behind a bar that covers the bottom of the screen. Whichever of
-   * those two wins alone is wrong, so both run, in this order.
-   *
-   * Only on opening, and only as far as it has to: if the chips already clear
-   * the bar the page does not move at all.
-   */
-  useLayoutEffect(() => {
-    if (!revealPicker.current) return;
-    revealPicker.current = false;
-
-    const picker = document.querySelector<HTMLElement>("[data-court-picker]");
-    const bar = actionBar.current;
-    if (!picker || !bar) return;
-
-    const breathingRoom = 12;
-    const overlap =
-      picker.getBoundingClientRect().bottom - (bar.getBoundingClientRect().top - breathingRoom);
-    if (overlap > 0) {
-      window.scrollBy({ top: overlap, left: 0, behavior: "instant" as ScrollBehavior });
     }
   });
 
@@ -975,13 +894,7 @@ export function CourtBookingFlow({
     setSimulating(true);
     await new Promise((resolve) => setTimeout(resolve, 1500));
     setSimulating(false);
-    // Short on purpose. The toast sits above the sheet, and a paragraph there
-    // covers the very controls the customer needs next.
-    setToast(
-      payMethod === "card"
-        ? "TBC / BOG — simulation only, no card was charged. Choose “Pay at the club” to confirm."
-        : "PayPal — simulation only, nothing was charged. Choose “Pay at the club” to confirm."
-    );
+    setToast(simulationMessage(payMethod));
   }
 
   if (step === "success" && bookingCode) {
@@ -1186,9 +1099,6 @@ export function CourtBookingFlow({
                   return;
                 }
                 setSelectedTime(t);
-                // This tap opens a row, so the chips it reveals have to be
-                // checked against the action bar once the layout settles.
-                revealPicker.current = true;
                 // Keep the court if it is free at the new time as well.
                 //
                 // Clearing it unconditionally is what made this take two taps:
@@ -1283,30 +1193,27 @@ export function CourtBookingFlow({
       */}
       {step === "slot" && (
         /*
-          A solid bar that reaches the bottom edge, with the button lifted well
-          clear of it.
+          The bar floats clear of the bottom edge rather than sitting on it.
 
-          Two bugs meet here and the shape has to answer both.
+          Flush against the bottom, Continue was inside the band iOS Safari
+          keeps for its own collapsed toolbar, and the club reported the
+          symptom exactly: "the first press just brings the browser's header
+          and footer back, and only then can I continue". That first tap was
+          never reaching the page — Safari took it to expand its chrome. The
+          same tap on a bar that ends 20px higher lands on the button.
 
-          Flush against the bottom, Continue sat inside the band iOS Safari
-          keeps for its own collapsed toolbar, and the club described it
-          exactly: "the first press just brings the browser's header and footer
-          back, and only then can I continue". That tap never reached the page.
-          So the button is padded up, and the padding is written against
-          env(safe-area-inset-bottom) — 0 while the toolbars are showing, the
-          home-indicator inset once they collapse — which puts the clearance
-          there precisely when the collapsed toolbar is.
+          The gap is written against env(safe-area-inset-bottom), which is 0
+          while the toolbars are showing and grows to the home-indicator inset
+          once they collapse — so the clearance appears exactly when the
+          collapsed toolbar is there to be avoided, and the bar does not float
+          pointlessly high the rest of the time.
 
-          Floating the whole bar instead left a strip of page showing beneath
-          it, and the court chips of an expanded row landed in that strip:
-          half-covered, half-tappable, and the club found the second tap again.
-          The background reaching the bottom means nothing is ever partly
-          visible and partly reachable — what is behind the bar is behind it.
+          pointer-events-none on the wrapper, auto on the bar: the wrapper
+          spans the full width, and without that it would swallow taps on the
+          court map showing through beside the bar.
         */
-        <div
-          ref={actionBar}
-          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface-base pb-[calc(env(safe-area-inset-bottom)+2rem)] shadow-[0_-4px_20px_rgba(0,26,51,0.07)] sm:pb-[calc(env(safe-area-inset-bottom)+0.9rem)]">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-7 pt-3.5 sm:px-8 sm:pt-4">
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:px-6 sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+          <div className="pointer-events-auto mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-court border border-line bg-surface-base px-5 py-3.5 shadow-[0_6px_24px_rgba(0,26,51,0.16)] sm:px-6 sm:py-4">
             {selectedCourt && selectedTime ? (
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-ink">
@@ -1618,63 +1525,8 @@ export function CourtBookingFlow({
                     </div>
                   </dl>
 
-                  {/*
-                    A radiogroup rather than three buttons: one thing is chosen
-                    out of three, arrow keys should move between them, and a
-                    screen reader should say "2 of 3" rather than reading three
-                    unrelated buttons.
-                  */}
-                  <div
-                    role="radiogroup"
-                    aria-label="How you'd like to pay"
-                    className="mt-5 space-y-2.5"
-                  >
-                    {PAY_METHODS.map((m) => {
-                      const Icon = m.icon;
-                      const active = payMethod === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onClick={() => setPayMethod(m.id)}
-                          className={cn(
-                            "flex w-full items-center gap-3 rounded-court border px-4 py-3 text-left transition-colors",
-                            active
-                              ? "border-brand bg-brand/5 ring-1 ring-brand"
-                              : "border-line bg-surface-base active:bg-surface-muted"
-                          )}
-                        >
-                          <Icon
-                            className={cn("h-5 w-5 shrink-0", active ? "text-brand" : "text-ink-muted")}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <span className="text-sm font-semibold text-ink">{m.name}</span>
-                              {m.comingSoon && (
-                                <span className="rounded-full bg-peak/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                                  Coming soon
-                                </span>
-                              )}
-                            </span>
-                            <span className="mt-0.5 block text-xs text-ink-muted/90">{m.hint}</span>
-                          </span>
-                          {/*
-                            A filled dot, not a tick: a tick reads as "done",
-                            and nothing here is done until the button below is
-                            pressed.
-                          */}
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              "h-4 w-4 shrink-0 rounded-full border-2",
-                              active ? "border-brand bg-brand" : "border-line"
-                            )}
-                          />
-                        </button>
-                      );
-                    })}
+                  <div className="mt-5">
+                    <PaymentMethodPicker value={payMethod} onChange={setPayMethod} />
                   </div>
 
                   {error && (
@@ -1694,11 +1546,7 @@ export function CourtBookingFlow({
                       : "Continue to payment"}
                   </button>
 
-                  <p className="mt-2.5 text-center text-[11px] leading-relaxed text-ink-muted/80">
-                    {payMethod === "club"
-                      ? "Nothing is charged now. We hold the court and you settle it at reception."
-                      : "Online payment isn't live yet — this button runs a simulation and takes no money."}
-                  </p>
+                  <PaymentFootnote method={payMethod} />
                 </>
               )}
               </div>
@@ -1707,30 +1555,7 @@ export function CourtBookingFlow({
         )}
       </AnimatePresence>
 
-      {/*
-        The toast sits at the top, not the bottom. The bottom of an iPhone
-        screen belongs to Safari's collapsed toolbar — the same band that was
-        eating the first tap on Continue — and a message that lands half under
-        the browser's own chrome is a message nobody reads.
-
-        z-50 to clear the sheet at z-40, since the thing it is reporting on
-        happened inside the sheet and the sheet stays open.
-      */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            role="status"
-            aria-live="polite"
-            onClick={() => setToast(null)}
-            className="fixed inset-x-4 top-[calc(env(safe-area-inset-top)+1rem)] z-50 mx-auto max-w-md cursor-pointer rounded-court bg-ink px-4 py-3 text-sm leading-snug text-white shadow-[0_8px_28px_rgba(0,26,51,0.28)]"
-          >
-            {toast}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <PaymentToast message={toast} onDismiss={() => setToast(null)} />
     </div>
   );
 }
@@ -1848,10 +1673,7 @@ function TimeList({
             </button>
 
             {open && !soldOut && (
-              <div
-                data-court-picker=""
-                className="border-t border-line bg-surface-muted px-4 py-4 sm:px-5"
-              >
+              <div className="border-t border-line bg-surface-muted px-4 py-4 sm:px-5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                   Choose a court
                 </p>

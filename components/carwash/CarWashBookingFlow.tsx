@@ -1,6 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  PaymentModal,
+  PaymentToast,
+  simulationMessage,
+  type PayMethod,
+} from "@/components/booking/payment";
 import { addDays, format } from "date-fns";
 import { Loader2, Check, Droplets, Sparkles, Zap, AlertCircle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
@@ -47,6 +53,68 @@ export function CarWashBookingFlow() {
   // carries the stored one through untouched rather than blanking it.
   const { guest, setGuest, remember, signedIn } = useGuestIdentity();
   const [submitting, setSubmitting] = useState(false);
+
+  /*
+    The same payment step the court flow has.
+
+    A wash could be reserved straight from the panel while a court took you
+    through a screen that named the total and asked how you wanted to pay. Two
+    ways to buy from one club, and the quieter one was the one that took your
+    money without ever mentioning money.
+  */
+  const [payOpen, setPayOpen] = useState(false);
+  const [payMethod, setPayMethod] = useState<PayMethod>("club");
+  const [simulating, setSimulating] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // The page behind a modal should not scroll. iOS ignores overflow on <body>,
+  // so the modal also carries overscroll-contain; between them a flick inside
+  // stays inside. Deliberately not position:fixed — that locks properly and
+  // then throws the page back to the top when released.
+  useEffect(() => {
+    if (!payOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [payOpen]);
+
+  useEffect(() => {
+    if (!payOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPayOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [payOpen]);
+
+  /**
+   * The one button at the bottom of the payment step.
+   *
+   * "Pay at the club" is not a demo — it runs the real booking, exactly as
+   * Reserve did before this step existed. Card and PayPal have no provider
+   * behind them, so they wait a beat and say so, and deliberately do NOT close
+   * the modal or drop the slot: a customer who tries the card button and finds
+   * their bay gone has been punished for tapping what the page offered.
+   */
+  async function payAndBook() {
+    setError(null);
+    if (payMethod === "club") {
+      await submit();
+      return;
+    }
+    setSimulating(true);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    setSimulating(false);
+    setToast(simulationMessage(payMethod));
+  }
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState<string | null>(null);
 
@@ -160,6 +228,7 @@ export function CarWashBookingFlow() {
         setSubmitting(false);
         return;
       }
+      setPayOpen(false);
       setCode(data.booking.booking_code);
       // Keep the details for next time now that the booking is real.
       remember(guest);
@@ -359,29 +428,42 @@ export function CarWashBookingFlow() {
             )}
           </div>
 
-          {/*
-            The bank buttons that used to sit here (BOG / TBC / PayPal) charged
-            nothing: no /api/checkout route exists, so the booking was written
-            as `unpaid` and the customer walked away believing they had paid.
-            Until a provider is actually wired up, the honest thing to show is
-            where payment happens.
-          */}
-          <p className="mt-4 rounded-court bg-surface-muted px-4 py-3 text-xs text-ink-muted">
-            Pay at the club when you drop the car off. We&apos;ll hold the bay for you.
-          </p>
-
           {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
 
           <button
-            disabled={submitting || !guest.name || !guest.email}
-            onClick={submit}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-court bg-brand py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
+            disabled={!guest.name || !guest.email}
+            onClick={() => setPayOpen(true)}
+            className="mt-5 w-full rounded-court bg-brand py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
           >
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Reserve for {formatMoney(service.price)}
+            Continue · {formatMoney(service.price)}
           </button>
         </div>
       )}
+
+      <PaymentModal
+        open={payOpen}
+        onClose={() => setPayOpen(false)}
+        summary={[
+          { label: "Wash", value: service.label },
+          { label: "Bay", value: bay ? `Bay ${bay}` : "—" },
+          {
+            label: "When",
+            value: time ? `${format(date, "EEE d MMM")} · ${time}` : "—",
+          },
+          { label: "Length", value: `${service.duration} min` },
+        ]}
+        totalLabel={formatMoney(service.price)}
+        method={payMethod}
+        onMethod={setPayMethod}
+        onConfirm={payAndBook}
+        busy={submitting || simulating}
+        error={error}
+        confirmLabel={
+          payMethod === "club" ? `Confirm booking · ${formatMoney(service.price)}` : "Continue to payment"
+        }
+      />
+
+      <PaymentToast message={toast} onDismiss={() => setToast(null)} />
     </div>
   );
 }
